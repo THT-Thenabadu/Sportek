@@ -6,8 +6,12 @@ let io;
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: '*', // We'll restrict this in prod
-      methods: ['GET', 'POST']
+      origin: [
+        'http://localhost:5173',
+        process.env.CLIENT_URL
+      ].filter(Boolean),
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 

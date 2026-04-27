@@ -125,7 +125,7 @@ function BookingFlowInner() {
 
   // ── Socket.io ──
   useEffect(() => {
-    const s = io('http://localhost:5000');
+    const s = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000');
     setSocket(s);
 
     // Join the property room so we receive real-time updates
