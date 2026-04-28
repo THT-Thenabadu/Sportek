@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../lib/axios';
 import PageWrapper from '../components/ui/PageWrapper';
 import Card, { CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import useAuthStore from '../store/useAuthStore';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 function timeAgo(dateParam) {
@@ -78,6 +79,17 @@ function FacilityDetails() {
   const [property, setProperty] = useState(null);
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+
+  const handleBookClick = () => {
+    if (!user) {
+      navigate('/login', { state: { from: `/facilities/${id}/book` } });
+      return;
+    }
+    navigate(`/facilities/${id}/book`);
+  };
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -158,11 +170,13 @@ function FacilityDetails() {
                  <span className="font-bold text-slate-700">4.8</span>
                  <span className="text-slate-500 underline">(124 reviews)</span>
               </div>
-              <Link to={`/facilities/${id}/book`} className="block">
-                <Button size="lg" className="w-full text-lg shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5">
-                  Book Now
-                </Button>
-              </Link>
+              <Button 
+                size="lg" 
+                className="w-full text-lg shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5"
+                onClick={handleBookClick}
+              >
+                Book Now
+              </Button>
             </CardContent>
           </Card>
         </div>

@@ -321,6 +321,54 @@ function DailyReport() {
     return <Badge variant="warning">Pending</Badge>;
   };
 
+  const downloadPDF = () => {
+    const reportContent = document.getElementById('daily-report-content');
+    if (!reportContent) return;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Sportek Daily Report - ${today}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { color: #1e40af; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #f1f5f9; padding: 10px; text-align: left; border: 1px solid #e2e8f0; }
+            td { padding: 10px; border: 1px solid #e2e8f0; }
+            .stat { display: inline-block; margin: 10px; padding: 15px 25px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; }
+            .confirmed { color: #059669; }
+            .noshow { color: #dc2626; }
+            .pending { color: #d97706; }
+          </style>
+        </head>
+        <body>
+          <h1>Sportek Daily Report</h1>
+          <p>Date: ${report.date}</p>
+          <div>
+            <div class="stat"><strong>${report.total}</strong><br/>Total</div>
+            <div class="stat confirmed"><strong>${report.confirmed}</strong><br/>Confirmed</div>
+            <div class="stat noshow"><strong>${report.noShow}</strong><br/>No Shows</div>
+            <div class="stat pending"><strong>${report.pending}</strong><br/>Pending</div>
+          </div>
+          <table>
+            <thead><tr><th>Customer</th><th>Time Slot</th><th>Status</th></tr></thead>
+            <tbody>
+              ${report.bookings.map(b => `
+                <tr>
+                  <td>${b.customerId?.name || 'Unknown'}</td>
+                  <td>${b.timeSlot?.start} – ${b.timeSlot?.end}</td>
+                  <td class="${b.attendanceStatus === 'confirmed' ? 'confirmed' : b.attendanceStatus === 'noShow' ? 'noshow' : 'pending'}">${b.attendanceStatus}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   return (
     <div className="max-w-3xl mx-auto mt-10 pb-10">
       <Card>
@@ -342,7 +390,7 @@ function DailyReport() {
             </div>
           )}
           {report && (
-            <div className="space-y-5">
+            <div className="space-y-5" id="daily-report-content">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: 'Total Bookings', value: report.total, color: 'text-slate-800' },
@@ -375,7 +423,13 @@ function DailyReport() {
                   ))}
                 </div>
               )}
-              <div className="border-t pt-4 flex justify-end">
+              <div className="border-t pt-4 flex justify-end gap-3 flex-wrap">
+                <Button variant="outline" onClick={downloadPDF}>
+                  Download PDF
+                </Button>
+                <Button variant="outline" onClick={() => { setReport(null); setSendSuccess(false); }}>
+                  Reset Report
+                </Button>
                 {sendSuccess ? (
                   <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium bg-emerald-50 px-4 py-2 rounded-lg">
                     <CheckCircle className="w-4 h-4" />

@@ -83,7 +83,7 @@ function BookingFlowInner() {
   // Local tick counter to force re-render of timers every second
   const [tick, setTick] = useState(0);
 
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
 
   // ── Fetch property info ──
   useEffect(() => {
@@ -93,7 +93,7 @@ function BookingFlowInner() {
   // ── Fetch available slots ──
   const fetchSlots = useCallback(() => {
     setLoadingSlots(true);
-    api.get(`/bookings/slots/${propertyId}`, { params: { date: today } })
+    api.get(`/bookings/slots/${propertyId}`, { params: { date: selectedDate } })
       .then(r => {
         // API returns { date, propertyId, slots: [...] }
         const fetchedSlots = r.data.slots ?? r.data;
@@ -113,7 +113,7 @@ function BookingFlowInner() {
         console.error('Slot fetch error:', err);
         setLoadingSlots(false);
       });
-  }, [propertyId, today]);
+  }, [propertyId, selectedDate]);
 
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
@@ -201,7 +201,7 @@ function BookingFlowInner() {
     // Emit correct event name that server listens for: 'lock_slot'
     socket.emit('lock_slot', {
       propertyId,
-      date: today,
+      date: selectedDate,
       timeSlotStart: slot.start,
       userId: user._id
     });
@@ -215,7 +215,7 @@ function BookingFlowInner() {
     setIntentError('');
     api.post('/bookings/create-payment-intent', {
       propertyId,
-      date: today,
+      date: selectedDate,
       timeSlotStart: selectedSlot.start,
       timeSlotEnd: selectedSlot.end,
     })
@@ -228,7 +228,7 @@ function BookingFlowInner() {
         setIntentError(err.response?.data?.message || 'Could not initiate payment. Please try again.');
         setCreatingIntent(false);
       });
-  }, [lockedByMe, selectedSlot, propertyId, today]);
+  }, [lockedByMe, selectedSlot, propertyId, selectedDate]);
 
   // ── Payment success ──
   const handlePaySuccess = () => {
@@ -240,7 +240,7 @@ function BookingFlowInner() {
     try {
       await api.post('/bookings/create-onsite', {
         propertyId,
-        date: today,
+        date: selectedDate,
         timeSlotStart: selectedSlot.start,
         timeSlotEnd: selectedSlot.end,
       });
@@ -306,10 +306,29 @@ function BookingFlowInner() {
         {/* ── Slot Picker ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Select a Time Slot — Today</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            <CardTitle>Select a Time Slot</CardTitle>
+            <p className="text-sm text-slate-500 mt-1">
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
           </CardHeader>
           <CardContent>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-2">Select Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => {
+                  setSelectedDate(e.target.value);
+                  setSelectedSlot(null);
+                  setClientSecret('');
+                  setBookingId('');
+                  setLockedByMe(false);
+                  setTimeLeft(null);
+                }}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
             {loadingSlots ? (
               <div className="flex justify-center py-10">
                 <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
@@ -407,7 +426,7 @@ function BookingFlowInner() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Date</span>
-                  <span className="font-medium">{today}</span>
+                  <span className="font-medium">{selectedDate}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Time Slot</span>

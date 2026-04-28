@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
 import Card, { CardHeader, CardTitle, CardContent, CardFooter } from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -11,6 +11,7 @@ function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const { login, isLoading } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const getRoleRedirect = (role) => {
     switch (role) {
@@ -29,7 +30,14 @@ function Login() {
     if (res.success) {
       // res.user is not returned; read it from the store after login
       const { user } = useAuthStore.getState();
-      navigate(getRoleRedirect(user?.role));
+      const data = user;
+      const from = location.state?.from || (
+        data.role === 'admin' || data.role === 'superAdmin' ? '/dashboard/admin' :
+        data.role === 'propertyOwner' ? '/dashboard/properties' :
+        data.role === 'securityOfficer' ? '/dashboard/scan' :
+        '/dashboard/bookings'
+      );
+      navigate(from, { replace: true });
     } else {
       setErrorMsg(res.message);
     }
