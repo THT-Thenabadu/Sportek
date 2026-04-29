@@ -62,7 +62,7 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       propertyId,
       date: new Date(date),
       'timeSlot.start': timeSlotStart,
-      status: { $in: ['pending', 'pending_onsite', 'booked'] }
+      status: { $in: ['booked', 'pending_onsite'] }
     });
     if (existing) return res.status(400).json({ message: 'This slot is already taken' });
     const booking = await Booking.create({
@@ -85,8 +85,10 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       bookingId: booking._id,
       propertyId,
       customerId: req.user._id,
+      date,
       timeSlot: { start: timeSlotStart, end: timeSlotEnd },
-      paymentMethod: 'onsite'
+      paymentMethod: 'onsite',
+      amountDue: property.pricePerHour
     });
     await booking.save();
     res.status(201).json(booking);

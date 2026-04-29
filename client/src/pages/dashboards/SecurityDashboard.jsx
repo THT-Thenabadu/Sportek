@@ -216,21 +216,48 @@ function SecurityScanner() {
                 </div>
 
                 {bookingDetails.paymentMethod === 'onsite' && bookingDetails.status === 'pending_onsite' && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-xs text-amber-700 font-semibold mb-2">ON-SITE PAYMENT PENDING</p>
-                    <Button
-                      className="w-full bg-amber-500 hover:bg-amber-600 text-white"
-                      onClick={async () => {
-                        try {
-                          await api.patch(`/bookings/${bookingDetails._id}/mark-paid`);
-                          setBookingDetails({ ...bookingDetails, status: 'booked' });
-                        } catch (err) {
-                          alert('Failed to mark as paid: ' + (err.response?.data?.message || err.message));
-                        }
-                      }}
-                    >
-                      ✓ Mark as Paid
-                    </Button>
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold text-amber-800">ON-SITE PAYMENT</p>
+                      <span className="text-lg font-bold text-amber-700">
+                        ${(() => {
+                          try {
+                            const qr = JSON.parse(bookingDetails.qrCodeData);
+                            return qr.amountDue || bookingDetails.totalAmount || '?';
+                          } catch { return bookingDetails.totalAmount || '?'; }
+                        })()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-700">Has the customer paid this amount?</p>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                        onClick={async () => {
+                          try {
+                            await api.patch(`/bookings/${bookingDetails._id}/mark-paid`);
+                            setBookingDetails({ ...bookingDetails, status: 'booked' });
+                          } catch (err) {
+                            alert('Failed: ' + (err.response?.data?.message || err.message));
+                          }
+                        }}
+                      >
+                        ✓ Payment Received
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 text-sm border-amber-300 text-amber-700"
+                        onClick={() => {
+                          setBookingDetails({ ...bookingDetails, attendanceStatus: 'pending' });
+                        }}
+                      >
+                        ⏳ Still Pending
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {bookingDetails.paymentMethod === 'onsite' && bookingDetails.status === 'booked' && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700 font-medium text-center">
+                    ✓ Payment Confirmed
                   </div>
                 )}
               </div>
@@ -322,41 +349,55 @@ function DailyReport() {
   };
 
   const downloadPDF = () => {
-    const reportContent = document.getElementById('daily-report-content');
-    if (!reportContent) return;
+    if (!report) return;
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
         <head>
-          <title>Sportek Daily Report - ${today}</title>
+          <title>Sportek Daily Report - ${report.date}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { color: #1e40af; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #f1f5f9; padding: 10px; text-align: left; border: 1px solid #e2e8f0; }
-            td { padding: 10px; border: 1px solid #e2e8f0; }
-            .stat { display: inline-block; margin: 10px; padding: 15px 25px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; }
-            .confirmed { color: #059669; }
-            .noshow { color: #dc2626; }
-            .pending { color: #d97706; }
+            body { font-family: Arial, sans-serif; padding: 30px; color: #1e293b; }
+            h1 { color: #1d4ed8; margin-bottom: 5px; }
+            .subtitle { color: #64748b; margin-bottom: 20px; }
+            .stats { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }
+            .stat { padding: 12px 20px; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; min-width: 80px; }
+            .stat .num { font-size: 24px; font-weight: bold; }
+            .stat .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; }
+            th { background: #f1f5f9; padding: 10px 12px; text-align: left; border: 1px solid #e2e8f0; font-size: 12px; }
+            td { padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; }
+            .confirmed { color: #059669; font-weight: 600; }
+            .noshow { color: #dc2626; font-weight: 600; }
+            .pending { color: #d97706; font-weight: 600; }
+            .onsite { background: #fef3c7; padding: 2px 8px; border-radius: 20px; font-size: 11px; color: #92400e; }
           </style>
         </head>
         <body>
           <h1>Sportek Daily Report</h1>
-          <p>Date: ${report.date}</p>
-          <div>
-            <div class="stat"><strong>${report.total}</strong><br/>Total</div>
-            <div class="stat confirmed"><strong>${report.confirmed}</strong><br/>Confirmed</div>
-            <div class="stat noshow"><strong>${report.noShow}</strong><br/>No Shows</div>
-            <div class="stat pending"><strong>${report.pending}</strong><br/>Pending</div>
+          <p class="subtitle">Generated: ${new Date().toLocaleString()} · Date: ${report.date}</p>
+          <div class="stats">
+            <div class="stat"><div class="num">${report.total}</div><div class="label">Total</div></div>
+            <div class="stat"><div class="num" style="color:#059669">${report.confirmed}</div><div class="label">Confirmed</div></div>
+            <div class="stat"><div class="num" style="color:#dc2626">${report.noShow}</div><div class="label">No Shows</div></div>
+            <div class="stat"><div class="num" style="color:#d97706">${report.pending}</div><div class="label">Pending</div></div>
           </div>
           <table>
-            <thead><tr><th>Customer</th><th>Time Slot</th><th>Status</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Time Slot</th>
+                <th>Payment</th>
+                <th>Attendance</th>
+              </tr>
+            </thead>
             <tbody>
               ${report.bookings.map(b => `
                 <tr>
                   <td>${b.customerId?.name || 'Unknown'}</td>
                   <td>${b.timeSlot?.start} – ${b.timeSlot?.end}</td>
+                  <td>${b.paymentMethod === 'onsite'
+                    ? `<span class="onsite">${b.status === 'booked' ? 'Paid On-Site' : 'Pay On Arrival'}</span>`
+                    : 'Online'}</td>
                   <td class="${b.attendanceStatus === 'confirmed' ? 'confirmed' : b.attendanceStatus === 'noShow' ? 'noshow' : 'pending'}">${b.attendanceStatus}</td>
                 </tr>
               `).join('')}
@@ -366,7 +407,8 @@ function DailyReport() {
       </html>
     `);
     printWindow.document.close();
-    printWindow.print();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 500);
   };
 
   return (
@@ -416,6 +458,11 @@ function DailyReport() {
                           <span className="font-medium text-slate-800">{b.customerId?.name || 'Unknown'}</span>
                           <span className="text-slate-400 mx-2">·</span>
                           <span className="text-slate-500">{b.timeSlot?.start} – {b.timeSlot?.end}</span>
+                          {b.paymentMethod === 'onsite' && (
+                            <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                              {b.status === 'booked' ? 'Paid On-Site' : 'Pay On Arrival'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       {attendanceBadge(b.attendanceStatus)}
@@ -424,7 +471,7 @@ function DailyReport() {
                 </div>
               )}
               <div className="border-t pt-4 flex justify-end gap-3 flex-wrap">
-                <Button variant="outline" onClick={downloadPDF}>
+                <Button variant="outline" onClick={downloadPDF} disabled={!report}>
                   Download PDF
                 </Button>
                 <Button variant="outline" onClick={() => { setReport(null); setSendSuccess(false); }}>
@@ -436,9 +483,9 @@ function DailyReport() {
                     Report sent to property owner
                   </div>
                 ) : (
-                  <Button onClick={sendReport} isLoading={sending} disabled={sending || report.total === 0}>
+                  <Button onClick={sendReport} isLoading={sending} disabled={sending || !report || report.total === 0}>
                     <Send className="w-4 h-4 mr-2" />
-                    Send Report to Property Owner
+                    Send to Property Owner
                   </Button>
                 )}
               </div>
