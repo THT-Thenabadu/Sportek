@@ -1,51 +1,141 @@
-const Event = require('../models/Event');
+const Event  = require('../models/Event');
 const Ticket = require('../models/Ticket');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { unlockAllForUser } = require('../services/seatLockService');
 
-// @desc    Initialize Ticket Purchase (Stripe PaymentIntent)
+// Helper: recompute soldQuantity for all categories from paid tickets
+const syncSoldQuantity = async (eventId) => {
+  try {
+    const event = await Event.findById(eventId);
+    if (!event || !event.ticketCategories?.length) return;
+
+    // Count only paid tickets
+    const tickets = await Ticket.find({
+      eventId,
+      paymentStatus: 'paid',
+      status: { $in: ['active', 'used'] },
+    });
+
+    const countMap = {};
+    tickets.forEach(t => {
+      const cat = t.category || t.tier;
+      countMap[cat] = (countMap[cat] || 0) + (t.quantity || 1);
+    });
+
+    const updates = {};
+    event.ticketCategories.forEach((cat, i) => {
+      updates[`ticketCategories.${i}.soldQuantity`] = countMap[cat.name] || 0;
+    });
+
+    await Event.updateOne({ _id: eventId }, { $set: updates });
+  } catch (err) {
+    console.error('[syncSoldQuantity] error:', err.message);
+  }
+};
+
+// @desc    Purchase ticket
 // @route   POST /api/tickets/purchase
 // @access  Private
 const purchaseTicketIntent = async (req, res) => {
   try {
-    const { eventId, tier } = req.body;
+    const { eventId, category, tier, seats } = req.body;
+    const categoryName  = category || tier;
+    const selectedSeats = seats || [];
+    const qty           = selectedSeats.length > 0 ? selectedSeats.length : 1;
 
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: 'Event not found' });
+    if (event.status === 'expired') return res.status(400).json({ message: 'This event has expired' });
 
-    const selectedTier = event.ticketTiers.find(t => t.tier === tier);
-    if (!selectedTier) return res.status(400).json({ message: 'Invalid ticket tier' });
+    const cats   = event.ticketCategories || [];
+    const catIdx = cats.findIndex(c => c.name === categoryName);
 
-    if (selectedTier.soldQuantity >= selectedTier.totalQuantity) {
-      return res.status(400).json({ message: 'Tickets sold out for this tier' });
+    let price;
+    if (catIdx !== -1) {
+      const cat      = cats[catIdx];
+      price          = cat.price;
+      const totalQty = cat.totalQuantity || 0;
+
+      // Count only PAID tickets for availability check
+      const paidCount = await Ticket.countDocuments({
+        eventId,
+        category: categoryName,
+        paymentStatus: 'paid',
+        status: { $in: ['active', 'used'] },
+      });
+
+      if (totalQty > 0 && paidCount + qty > totalQty) {
+        return res.status(400).json({ message: 'Not enough tickets available' });
+      }
+    } else {
+      const legacyTier = (event.ticketTiers || []).find(t => t.tier === categoryName);
+      if (!legacyTier) return res.status(400).json({ message: 'Invalid ticket category' });
+      price = legacyTier.price;
     }
 
-    // Instead of locking, we'll just create the Intent and rely on webhook success
-    // to actually create the Ticket & decrement quantity. Alternatively, we create pending ticket.
-    // For simplicity, we just create the intent with metadata.
+    const totalAmount = price * qty;
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(selectedTier.price * 100),
-      currency: 'usd',
-      metadata: {
-        type: 'ticket_purchase',
-        eventId: event._id.toString(),
-        tier,
-        customerId: req.user._id.toString()
-      }
+    // Create ticket immediately with pending status
+    const ticket = await Ticket.create({
+      eventId:       event._id,
+      customerId:    req.user._id,
+      category:      categoryName,
+      tier:          categoryName,
+      price,
+      quantity:      qty,
+      seats:         selectedSeats,
+      paymentStatus: 'pending',
+      status:        'active',
     });
 
-    res.json({ clientSecret: paymentIntent.client_secret });
+    ticket.qrCodeData = JSON.stringify({
+      ticketId:   ticket._id,
+      eventId:    event._id,
+      category:   categoryName,
+      seats:      selectedSeats.map(s => s.seatId),
+      customerId: req.user._id,
+    });
+    await ticket.save();
+
+    // Release seat locks — seats are now recorded in DB
+    unlockAllForUser(eventId, req.user._id.toString());
+
+    // Return ticketId directly (no Stripe for now — payment is simulated in UI)
+    res.json({ ticketId: ticket._id, clientSecret: null });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Stripe Webhook handler for Tickets (can be combined with bookings webhook in a real scenario, but keeping modular here)
+// @desc    Confirm payment for a ticket (called after UI payment form)
+// @route   PATCH /api/tickets/:id/confirm-payment
+// @access  Private
+const confirmPayment = async (req, res) => {
+  try {
+    const ticket = await Ticket.findOne({
+      _id: req.params.id,
+      customerId: req.user._id,
+    });
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found' });
+    if (ticket.paymentStatus === 'paid') return res.json(ticket); // already paid
+
+    ticket.paymentStatus = 'paid';
+    await ticket.save();
+
+    // Sync soldQuantity from actual paid tickets
+    await syncSoldQuantity(ticket.eventId.toString());
+
+    res.json(ticket);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc    Webhook — mark ticket as paid
 // @route   POST /api/tickets/webhook
-// @access  Public
 const ticketWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  const endpointSecret = process.env.STRIPE_TICKET_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+  const sig             = req.headers['stripe-signature'];
+  const endpointSecret  = process.env.STRIPE_TICKET_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
 
   let stripeEvent;
   try {
@@ -55,39 +145,14 @@ const ticketWebhook = async (req, res) => {
   }
 
   if (stripeEvent.type === 'payment_intent.succeeded') {
-    const paymentIntent = stripeEvent.data.object;
-    
-    // Check if metadata type is ticket
-    if (paymentIntent.metadata.type === 'ticket_purchase') {
-      const { eventId, tier, customerId } = paymentIntent.metadata;
-
-      const event = await Event.findById(eventId);
-      const selectedTier = event.ticketTiers.find(t => t.tier === tier);
-
-      // Create ticket
-      const ticket = await Ticket.create({
-        eventId,
-        customerId,
-        tier,
-        price: selectedTier.price,
-        stripePaymentIntentId: paymentIntent.id,
-        status: 'active'
-      });
-
-      // Generate QR Code data
-      ticket.qrCodeData = JSON.stringify({
-        ticketId: ticket._id,
-        eventId: event._id,
-        customerId: customerId,
-        tier: tier
-      });
-      await ticket.save();
-
-      // Decrement quantity
-      await Event.updateOne(
-        { _id: eventId, 'ticketTiers.tier': tier },
-        { $inc: { 'ticketTiers.$.soldQuantity': 1 } }
+    const pi = stripeEvent.data.object;
+    if (pi.metadata?.type === 'ticket_purchase') {
+      const ticket = await Ticket.findOneAndUpdate(
+        { stripePaymentIntentId: pi.id },
+        { paymentStatus: 'paid' },
+        { new: true }
       );
+      if (ticket) await syncSoldQuantity(ticket.eventId.toString());
     }
   }
 
@@ -96,16 +161,15 @@ const ticketWebhook = async (req, res) => {
 
 // @desc    Get user's purchased tickets
 // @route   GET /api/tickets/my-tickets
-// @access  Private
 const getMyTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find({ customerId: req.user._id })
-      .populate('eventId', 'name date time location bannerImage ticketTiers')
+      .populate('eventId', 'name date time location bannerImage ticketCategories ticketTiers')
       .sort('-createdAt');
     res.json(tickets);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-}
+};
 
-module.exports = { purchaseTicketIntent, ticketWebhook, getMyTickets };
+module.exports = { purchaseTicketIntent, confirmPayment, ticketWebhook, getMyTickets, syncSoldQuantity };

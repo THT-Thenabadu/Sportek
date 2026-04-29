@@ -10,14 +10,16 @@ function MainLayout() {
   
   // Hide navbar for security officers on dashboard pages
   const isSecurityDashboard = user?.role === 'securityOfficer' && location.pathname.startsWith('/dashboard');
+  // EventHub has its own navbar/footer
+  const isEventHub = location.pathname === '/events' || location.pathname.startsWith('/events/');
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      {!isSecurityDashboard && <Navbar />}
+      {!isSecurityDashboard && !isEventHub && <Navbar />}
       <main className="flex-1 flex flex-col">
         <Outlet />
       </main>
-      {!isSecurityDashboard && <Footer />}
+      {!isSecurityDashboard && !isEventHub && <Footer />}
     </div>
   );
 }

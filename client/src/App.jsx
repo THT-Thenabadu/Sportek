@@ -13,6 +13,11 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Events from './pages/Events';
+import EventHub from './pages/EventHub';
+import EventDetails from './pages/EventDetails';
+import EventBooking from './pages/EventBooking';
+import EventSeatSelection from './pages/EventSeatSelection';
+import EventPayment from './pages/EventPayment';
 import Venues from './pages/Venues';
 import FacilityDetails from './pages/FacilityDetails';
 import BookingFlow from './pages/BookingFlow';
@@ -22,6 +27,7 @@ import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, C
 import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerRescheduleRequests } from './pages/dashboards/OwnerDashboard';
 import SecurityCredentials from './pages/dashboards/SecurityCredentials';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
+import EventManagementDashboard from './pages/dashboards/EventManagementDashboard';
 import SecurityDashboard, { 
   SecurityScanPage,
   SecurityAvailabilityPage,
@@ -69,7 +75,11 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/venues" element={<Venues />} />
-          <Route path="/events" element={<Events />} />
+          <Route path="/events" element={<EventHub />} />
+          <Route path="/events/:id" element={<EventDetails />} />
+        <Route path="/events/:id/book/:catIndex" element={<EventBooking />} />
+        <Route path="/events/:id/seats" element={<EventSeatSelection />} />
+        <Route path="/events/:id/payment" element={<EventPayment />} />
           <Route path="/facilities/:id" element={<FacilityDetails />} />
           <Route path="/facilities/:id/book" element={
             <ProtectedRoute>
@@ -119,6 +129,9 @@ function App() {
         
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/dashboard/events-hub" element={
+          <ProtectedRoute role="admin"><EventManagementDashboard /></ProtectedRoute>
+        } />
       </Routes>
       <Chatbot />
     </Router>

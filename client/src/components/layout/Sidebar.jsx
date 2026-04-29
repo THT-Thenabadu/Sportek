@@ -30,11 +30,11 @@ function Sidebar() {
     // Admins & superAdmins — full management access
     if (role === 'admin' || role === 'superAdmin') {
       return [
-        { name: 'Admin Dashboard',    path: '/dashboard/admin',    icon: Users         },
-        { name: 'Events Management',  path: '/dashboard/admin/events', icon: Ticket    },
-        { name: 'Owner Applications', path: '/dashboard/admin',    icon: UserPlus      }, // tab-based, same page
-        { name: 'My Bookings',        path: '/dashboard/bookings', icon: Calendar      },
-        { name: 'My Tickets',         path: '/dashboard/tickets',  icon: Ticket        },
+        { name: 'Admin Dashboard',    path: '/dashboard/admin',       icon: Users    },
+        { name: 'Events Management',  path: '/dashboard/events-hub',  icon: Ticket   },
+        { name: 'Owner Applications', path: '/dashboard/admin',       icon: UserPlus },
+        { name: 'My Bookings',        path: '/dashboard/bookings',    icon: Calendar },
+        { name: 'My Tickets',         path: '/dashboard/tickets',     icon: Ticket   },
       ];
     }
 
