@@ -6,7 +6,7 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 
 function Register() {
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', phone: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', phone: '', institution: '' });
   const [errorMsg, setErrorMsg] = useState('');
   const { register, isLoading } = useAuthStore();
   const navigate = useNavigate();
@@ -65,6 +65,12 @@ function Register() {
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
+              />
+              <Input
+                label="Institution / Organization (optional)"
+                placeholder="e.g. University of Colombo, ABC Sports Club"
+                value={formData.institution}
+                onChange={e => setFormData(prev => ({ ...prev, institution: e.target.value }))}
               />
               <Input 
                 label="Password" 

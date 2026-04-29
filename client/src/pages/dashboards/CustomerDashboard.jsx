@@ -152,6 +152,14 @@ export function CustomerBookings() {
                         >
                           Download QR
                         </button>
+                        {b.passkey && (
+                          <div className="mt-2 text-center">
+                            <p className="text-xs text-slate-400 mb-1">Entry Passkey</p>
+                            <div className="font-mono text-lg font-bold tracking-widest text-primary-700 bg-primary-50 border border-primary-200 rounded-lg px-3 py-2">
+                              {b.passkey}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="w-[106px] h-[106px] bg-slate-50 border border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-center p-2">

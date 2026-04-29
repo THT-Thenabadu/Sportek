@@ -16,6 +16,7 @@ const bookingSchema = new mongoose.Schema({
   stripePaymentIntentId: { type: String },
   attendanceStatus: { type: String, enum: ['pending', 'confirmed', 'noShow'], default: 'pending' },
   qrCodeData: { type: String },
+  passkey: { type: String, default: '' },
   bundledAssets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Asset' }]
 }, { timestamps: true });
 

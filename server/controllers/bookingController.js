@@ -249,14 +249,16 @@ const stripeWebhook = async (req, res) => {
 
       const booking = await Booking.findById(bookingId).populate('customerId').populate('propertyId');
       if (booking) {
+        const passkey = Math.random().toString(36).substring(2, 8).toUpperCase();
+        booking.passkey = passkey;
         booking.status = 'booked';
-        // Generate QR data JSON payload that security staff will scan
         booking.qrCodeData = JSON.stringify({
           bookingId: booking._id,
           propertyId: booking.propertyId,
           customerId: booking.customerId,
           date: booking.date,
           timeSlot: booking.timeSlot,
+          passkey,
           paymentMethod: 'online'
         });
 

@@ -10,8 +10,12 @@ const createProperty = async (req, res) => {
     // Check if user is trying to set ownerId (only admin can assign to others, owner creates for self)
     const ownerId = req.user.role === 'admin' && req.body.ownerId ? req.body.ownerId : req.user._id;
 
+    const User = require('../models/User');
+    const owner = await User.findById(ownerId);
+
     const property = await Property.create({
       ownerId,
+      institution: owner?.institution || '',
       name,
       sportType,
       description,

@@ -60,6 +60,7 @@ function BookingFlowInner() {
   const { id: propertyId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const [step, setStep] = useState(1); // 1 = select slot, 2 = checkout
 
   const [property, setProperty] = useState(null);
   const [slots, setSlots] = useState([]);
@@ -196,16 +197,18 @@ function BookingFlowInner() {
   // ── Select & lock a slot ──
   const handleSelectSlot = (slot) => {
     if (slot.state !== 'Available') return;
-    if (!socket || !user) return;
+    setSelectedSlot(slot);
+    setStep(2);
+  };
 
-    // Emit correct event name that server listens for: 'lock_slot'
+  const handleConfirmPaymentMethod = () => {
+    if (!socket || !user) return;
     socket.emit('lock_slot', {
       propertyId,
       date: selectedDate,
-      timeSlotStart: slot.start,
+      timeSlotStart: selectedSlot.start,
       userId: user._id
     });
-    setSelectedSlot(slot);
   };
 
   // ── Create PaymentIntent once slot is locked ──
@@ -233,6 +236,7 @@ function BookingFlowInner() {
   // ── Payment success ──
   const handlePaySuccess = () => {
     setPaySuccess(true);
+    setStep(3);
     setTimeout(() => navigate('/dashboard/bookings'), 2500);
   };
 
@@ -245,6 +249,7 @@ function BookingFlowInner() {
         timeSlotEnd: selectedSlot.end,
       });
       setOnsiteSuccess(true);
+      setStep(3);
       setTimeout(() => navigate('/dashboard/bookings'), 2500);
     } catch (err) {
       setIntentError(err.response?.data?.message || 'Failed to create on-site booking');
@@ -295,108 +300,134 @@ function BookingFlowInner() {
 
   return (
     <PageWrapper className="max-w-5xl">
-      <div className="mb-8">
+      {/* Progress Bar */}
+      <div className="mb-8 max-w-md mx-auto">
+        <div className="flex items-center justify-between mb-2">
+          {['Select Slot', 'Checkout', 'Confirmed'].map((label, i) => (
+            <div key={i} className="flex flex-col items-center flex-1">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                i + 1 < step ? 'bg-primary-600 text-white' :
+                i + 1 === step ? 'bg-primary-600 text-white ring-4 ring-primary-100' :
+                'bg-slate-200 text-slate-500'
+              }`}>
+                {i + 1 < step ? '✓' : i + 1}
+              </div>
+              <span className={`text-xs mt-1 font-medium ${i + 1 === step ? 'text-primary-600' : 'text-slate-400'}`}>
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="relative h-1.5 bg-slate-200 rounded-full">
+          <div
+            className="absolute top-0 left-0 h-full bg-primary-600 rounded-full transition-all duration-500"
+            style={{ width: `${((step - 1) / 2) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-slate-900">Secure Your Booking</h1>
         {property && (
           <p className="text-slate-500 mt-1">{property.name} · {property.location?.address}</p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-        {/* ── Slot Picker ── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a Time Slot</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">
-              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
-          </CardHeader>
-          <CardContent>
-            {/* Date Selector */}
-            <div className="mb-5">
-              <p className="text-sm font-medium text-slate-700 mb-3">Select Date</p>
-              <div className="grid grid-cols-4 gap-2">
-                {Array.from({ length: 4 }, (_, i) => {
-                  const date = new Date();
-                  date.setDate(date.getDate() + i);
-                  const dateStr = date.toISOString().split('T')[0];
-                  const isSelected = selectedDate === dateStr;
-                  const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-                  const dayNum = date.getDate();
-                  const month = date.toLocaleDateString('en-US', { month: 'short' });
-                  return (
-                    <button
-                      key={dateStr}
-                      onClick={() => {
-                        setSelectedDate(dateStr);
-                        setSelectedSlot(null);
-                        setClientSecret('');
-                        setBookingId('');
-                        setLockedByMe(false);
-                        setTimeLeft(null);
-                      }}
-                      className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
-                        isSelected
-                          ? 'bg-primary-600 border-primary-600 text-white'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
-                      }`}
-                    >
-                      <span className="text-xs font-medium uppercase">{dayName}</span>
-                      <span className="text-2xl font-bold my-0.5">{dayNum}</span>
-                      <span className="text-xs">{month}</span>
-                    </button>
-                  );
-                })}
+      <div className="max-w-3xl mx-auto">
+        {/* Step 1: Slot Picker */}
+        {step === 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Select a Time Slot</CardTitle>
+              <p className="text-sm text-slate-500 mt-1">
+                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </CardHeader>
+            <CardContent>
+              {/* Date Selector */}
+              <div className="mb-5">
+                <p className="text-sm font-medium text-slate-700 mb-3">Select Date</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: 4 }, (_, i) => {
+                    const date = new Date();
+                    date.setDate(date.getDate() + i);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const isSelected = selectedDate === dateStr;
+                    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                    const dayNum = date.getDate();
+                    const month = date.toLocaleDateString('en-US', { month: 'short' });
+                    return (
+                      <button
+                        key={dateStr}
+                        onClick={() => {
+                          setSelectedDate(dateStr);
+                          setSelectedSlot(null);
+                          setClientSecret('');
+                          setBookingId('');
+                          setLockedByMe(false);
+                          setTimeLeft(null);
+                        }}
+                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                          isSelected
+                            ? 'bg-primary-600 border-primary-600 text-white'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
+                        }`}
+                      >
+                        <span className="text-xs font-medium uppercase">{dayName}</span>
+                        <span className="text-2xl font-bold my-0.5">{dayNum}</span>
+                        <span className="text-xs">{month}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-            {loadingSlots ? (
-              <div className="flex justify-center py-10">
-                <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
-              </div>
-            ) : slots.length === 0 ? (
-              <p className="text-slate-500 text-center py-8">No slots available for today.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {slots.map((s, i) => {
-                  const isSelected = selectedSlot?.start === s.start;
-                  const isBooked = s.state === 'Booked';
-                  const isPending = s.state === 'Pending';
+              {loadingSlots ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+                </div>
+              ) : slots.length === 0 ? (
+                <p className="text-slate-500 text-center py-8">No slots available for today.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {slots.map((s, i) => {
+                    const isBooked = s.state === 'Booked';
+                    const isPending = s.state === 'Pending';
 
-                  // Calculate remaining seconds for Pending slots (shown to ALL users)
-                  let pendingSecsLeft = null;
-                  if (isPending && slotLockInfo[s.start]) {
-                    pendingSecsLeft = Math.max(0, Math.round((new Date(slotLockInfo[s.start]) - Date.now()) / 1000));
-                  }
+                    // Calculate remaining seconds for Pending slots (shown to ALL users)
+                    let pendingSecsLeft = null;
+                    if (isPending && slotLockInfo[s.start]) {
+                      pendingSecsLeft = Math.max(0, Math.round((new Date(slotLockInfo[s.start]) - Date.now()) / 1000));
+                    }
 
-                  let cls = 'p-3 rounded-lg border text-center font-medium text-sm transition-all ';
-                  if (isSelected)       cls += 'bg-primary-600 text-white border-primary-600 ring-2 ring-primary-300';
-                  else if (isBooked)    cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
-                  else if (isPending)   cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
-                  else                  cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
+                    let cls = 'p-3 rounded-lg border text-center font-medium text-sm transition-all ';
+                    if (isBooked)    cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
+                    else if (isPending)   cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
+                    else                  cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
 
-                  return (
-                    <div key={i} className={cls} onClick={() => handleSelectSlot(s)}>
-                      <div>{s.start} – {s.end}</div>
-                      {isBooked  && <div className="text-xs mt-0.5 opacity-70">Booked</div>}
-                      {isPending && (
-                        <div className="text-xs mt-0.5 font-semibold">
-                          {pendingSecsLeft !== null
-                            ? `Held · ${Math.floor(pendingSecsLeft / 60)}:${String(pendingSecsLeft % 60).padStart(2, '0')}`
-                            : 'Held'
-                          }
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    return (
+                      <div key={i} className={cls} onClick={() => handleSelectSlot(s)}>
+                        <div>{s.start} – {s.end}</div>
+                        {isBooked  && <div className="text-xs mt-0.5 opacity-70">Booked</div>}
+                        {isPending && (
+                          <div className="text-xs mt-0.5 font-semibold">
+                            {pendingSecsLeft !== null
+                              ? `Held · ${Math.floor(pendingSecsLeft / 60)}:${String(pendingSecsLeft % 60).padStart(2, '0')}`
+                              : 'Held'
+                            }
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* ── Checkout Panel ── */}
-        {selectedSlot && (
-          <Card className="border-primary-100">
+        {/* Step 2: Checkout Panel */}
+        {step === 2 && selectedSlot && (
+          <Card className="border-primary-100 max-w-xl mx-auto">
             <CardHeader className="bg-primary-50 rounded-t-lg border-b border-primary-100">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-primary-800">Checkout</CardTitle>
@@ -409,33 +440,36 @@ function BookingFlowInner() {
                   </div>
                 )}
               </div>
-              {lockedByMe && (
+              {lockedByMe ? (
                 <p className="text-xs text-primary-600 mt-1">Slot reserved for you. Complete payment before time runs out.</p>
+              ) : (
+                <p className="text-xs text-slate-500 mt-1">Review your booking and select a payment method.</p>
               )}
-              {lockedByMe && (
-                <div className="flex gap-3 p-1 bg-slate-100 rounded-lg mt-4">
-                  <button
-                    onClick={() => setPaymentMethod('online')}
-                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                      paymentMethod === 'online'
-                        ? 'bg-white shadow text-primary-700'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    💳 Pay Online
-                  </button>
-                  <button
-                    onClick={() => setPaymentMethod('onsite')}
-                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                      paymentMethod === 'onsite'
-                        ? 'bg-white shadow text-primary-700'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    🏢 Pay On-Site
-                  </button>
-                </div>
-              )}
+              
+              <div className="flex gap-3 p-1 bg-slate-100 rounded-lg mt-4">
+                <button
+                  onClick={() => setPaymentMethod('online')}
+                  disabled={lockedByMe}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                    paymentMethod === 'online'
+                      ? 'bg-white shadow text-primary-700'
+                      : 'text-slate-500 hover:text-slate-700'
+                  } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  💳 Pay Online
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('onsite')}
+                  disabled={lockedByMe}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                    paymentMethod === 'onsite'
+                      ? 'bg-white shadow text-primary-700'
+                      : 'text-slate-500 hover:text-slate-700'
+                  } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  🏢 Pay On-Site
+                </button>
+              </div>
             </CardHeader>
             <CardContent className="p-6 space-y-5">
               {/* Summary */}
@@ -459,11 +493,25 @@ function BookingFlowInner() {
                 <span className="text-primary-600">${property?.pricePerHour?.toFixed(2)}</span>
               </div>
 
-              {/* Waiting for lock */}
-              {!lockedByMe && !intentError && (
-                <div className="flex items-center gap-2 text-slate-500 text-sm py-2">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-primary-500 rounded-full animate-spin" />
-                  Locking your slot…
+              {/* If not locked yet, show Lock button */}
+              {!lockedByMe && (
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setStep(1);
+                      setSelectedSlot(null);
+                    }}
+                  >
+                    ← Back
+                  </Button>
+                  <Button
+                    className="flex-1 bg-primary-600 hover:bg-primary-700 text-white"
+                    onClick={handleConfirmPaymentMethod}
+                  >
+                    Confirm & Lock Slot
+                  </Button>
                 </div>
               )}
 

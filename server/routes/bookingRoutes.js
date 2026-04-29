@@ -53,6 +53,23 @@ router.post('/daily-report/send', protect, authorize('securityOfficer'), async (
 
 router.route('/property/:propertyId').get(protect, authorize('admin', 'propertyOwner', 'securityOfficer'), getPropertyBookings);
 
+router.get('/booking-window/:propertyId', protect, async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const property = await Property.findById(req.params.propertyId);
+    const user = await User.findById(req.user._id);
+    const sameInstitution = property?.institution &&
+      user?.institution &&
+      property.institution.toLowerCase().trim() === user.institution.toLowerCase().trim();
+    res.json({
+      maxDays: sameInstitution ? 7 : 4,
+      sameInstitution
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.post('/create-onsite', protect, authorize('customer'), async (req, res) => {
   try {
     const { propertyId, date, timeSlotStart, timeSlotEnd } = req.body;
@@ -92,17 +109,32 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
         paymentMethod: 'onsite'
       })
     });
+    const passkey = Math.random().toString(36).substring(2, 8).toUpperCase();
+    booking.passkey = passkey;
     booking.qrCodeData = JSON.stringify({
       bookingId: booking._id,
       propertyId,
       customerId: req.user._id,
       date,
       timeSlot: { start: timeSlotStart, end: timeSlotEnd },
+      passkey,
       paymentMethod: 'onsite',
       amountDue: property.pricePerHour
     });
     await booking.save();
     res.status(201).json(booking);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/verify-passkey/:passkey', protect, authorize('securityOfficer'), async (req, res) => {
+  try {
+    const booking = await Booking.findOne({ passkey: req.params.passkey })
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name');
+    if (!booking) return res.status(404).json({ message: 'Invalid passkey — no booking found' });
+    res.json(booking);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

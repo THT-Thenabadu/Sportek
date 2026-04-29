@@ -13,7 +13,7 @@ const generateToken = (id) => {
 // @access  Public
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, institution } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please add all fields' });
@@ -33,6 +33,7 @@ const registerUser = async (req, res) => {
       email,
       passwordHash,
       phone,
+      institution: institution || '',
       role: 'customer' // defaults to customer on signup
     });
 

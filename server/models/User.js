@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema({
   passwordHash: { type: String, required: true },
   phone: { type: String },
   profilePicture: { type: String },
+  institution: { type: String, default: '' },
   role: { type: String, enum: ['superAdmin', 'admin', 'propertyOwner', 'customer', 'securityOfficer'], default: 'customer' },
   isBanned: { type: Boolean, default: false },
   associatedProperty: { type: mongoose.Schema.Types.ObjectId, ref: 'Property' },

@@ -8,6 +8,17 @@ import { CheckCircle, XCircle, User, Calendar, Clock, MapPin, Loader2, QrCode, F
 
 function SecurityScanner() {
   const [loadingBooking, setLoadingBooking] = useState(false);
+  const [passkeyInput, setPasskeyInput] = useState('');
+  const [passkeyResult, setPasskeyResult] = useState(null);
+
+  const verifyPasskey = async () => {
+    try {
+      const res = await api.get(`/bookings/verify-passkey/${passkeyInput.toUpperCase()}`);
+      setPasskeyResult({ success: true, booking: res.data });
+    } catch (err) {
+      setPasskeyResult({ success: false, message: err.response?.data?.message || 'Invalid passkey' });
+    }
+  };
   const [bookingDetails, setBookingDetails] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const scannerRef = useRef(null);
@@ -286,6 +297,52 @@ function SecurityScanner() {
               </div>
             </div>
           )}
+        </Card>
+      </div>
+      
+      <div className="max-w-3xl mx-auto mt-6">
+        <Card>
+          <CardHeader className="bg-slate-50 border-b">
+            <CardTitle className="text-lg">Passkey Verification</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <p className="text-sm text-slate-500 mb-3">Enter customer passkey to verify booking without scanning QR</p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                maxLength={6}
+                placeholder="e.g. A3X9KL"
+                value={passkeyInput}
+                onChange={e => {
+                  setPasskeyInput(e.target.value.toUpperCase());
+                  setPasskeyResult(null);
+                }}
+                className="flex-1 border border-slate-300 rounded-lg px-4 py-2 text-sm font-mono uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <Button onClick={verifyPasskey} disabled={passkeyInput.length < 6}>
+                Verify
+              </Button>
+            </div>
+            {passkeyResult && (
+              <div className={`mt-4 p-4 rounded-xl border ${passkeyResult.success ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                {passkeyResult.success ? (
+                  <div className="space-y-2 text-sm">
+                    <p className="font-semibold text-emerald-800 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" /> Valid Booking
+                    </p>
+                    <p className="text-slate-700">Customer: <strong>{passkeyResult.booking.customerId?.name}</strong></p>
+                    <p className="text-slate-700">Facility: <strong>{passkeyResult.booking.propertyId?.name}</strong></p>
+                    <p className="text-slate-700">Date: <strong>{new Date(passkeyResult.booking.date).toLocaleDateString()}</strong></p>
+                    <p className="text-slate-700">Time: <strong>{passkeyResult.booking.timeSlot?.start} – {passkeyResult.booking.timeSlot?.end}</strong></p>
+                  </div>
+                ) : (
+                  <p className="text-red-700 text-sm font-medium flex items-center gap-2">
+                    <XCircle className="w-4 h-4" /> {passkeyResult.message}
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
         </Card>
       </div>
     </div>
