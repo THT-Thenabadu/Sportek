@@ -1382,20 +1382,462 @@ function EntryLog() {
 }
 
 export default function SecurityDashboard({ defaultTab = 'scanner' }) {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const [quickFilter, setQuickFilter] = useState('');
 
-  useEffect(() => {
-    setActiveTab(defaultTab);
-  }, [defaultTab]);
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  const quickFilterSections = [
+    { id: 'availability', label: 'Availability' },
+    { id: 'upcoming', label: 'Upcoming Bookings' },
+    { id: 'current', label: 'Current Bookings' },
+    { id: 'entry-log', label: 'Entry Log' },
+    { id: 'report', label: 'Reports' },
+  ];
+
+  const handleQuickFilterClick = (sectionId) => {
+    navigate(`/dashboard/${sectionId}`);
+  };
 
   return (
-    <div className="space-y-6">
-      {activeTab === 'scanner' && <SecurityScanner />}
-      {activeTab === 'availability' && <SecurityAvailability />}
-      {activeTab === 'upcoming' && <UpcomingBookings />}
-      {activeTab === 'current' && <CurrentBookings />}
-      {activeTab === 'entry-log' && <EntryLog />}
-      {activeTab === 'report' && <DailyReport />}
+    <div className="min-h-screen bg-slate-50">
+      {/* Top Bar */}
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+
+      {/* Content Area */}
+      <div>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">Welcome, Security Officer</h2>
+          <p className="text-slate-500">Sports Property Security Management</p>
+        </div>
+
+        {/* Quick Filter */}
+        <Card className="mb-8 shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <label className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
+                Quick Filter
+              </label>
+              {quickFilter && (
+                <button
+                  onClick={() => setQuickFilter('')}
+                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="e.g. booking, entry, report..."
+                value={quickFilter}
+                onChange={(e) => setQuickFilter(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-4" />
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Find section</p>
+          </CardContent>
+        </Card>
+
+        {/* Quick Access Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {quickFilterSections
+            .filter((section) =>
+              quickFilter
+                ? section.label.toLowerCase().includes(quickFilter.toLowerCase())
+                : true
+            )
+            .map((section) => (
+              <Card
+                key={section.id}
+                className="hover:shadow-lg transition-shadow cursor-pointer bg-white"
+                onClick={() => handleQuickFilterClick(section.id)}
+              >
+                <CardContent className="p-6 text-center">
+                  <h3 className="text-lg font-semibold text-slate-900">{section.label}</h3>
+                </CardContent>
+              </Card>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Export individual page components for routing
+export function SecurityScanPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <SecurityScanner />
+    </div>
+  );
+}
+
+export function SecurityAvailabilityPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <SecurityAvailability />
+    </div>
+  );
+}
+
+export function SecurityUpcomingPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <UpcomingBookings />
+    </div>
+  );
+}
+
+export function SecurityCurrentPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <CurrentBookings />
+    </div>
+  );
+}
+
+export function SecurityEntryLogPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <EntryLog />
+    </div>
+  );
+}
+
+export function SecurityReportPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+      <DailyReport />
+    </div>
+  );
+}
+
+export function SecurityBookingDetailsPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('date_newest');
+  
+  const handleLogout = () => {
+    useAuthStore.getState().logout();
+    navigate('/login');
+  };
+
+  useEffect(() => {
+    // Fetch all bookings for the property
+    api.get('/bookings/all-security')
+      .then(res => {
+        setBookings(Array.isArray(res.data) ? res.data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.message || 'Could not load bookings.');
+        setLoading(false);
+      });
+  }, []);
+
+  const getFilteredAndSorted = () => {
+    let result = bookings.filter(b => {
+      const customerName = b.customerId?.name || '';
+      const propertyName = b.propertyId?.name || '';
+      const matchesSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            propertyName.toLowerCase().includes(searchQuery.toLowerCase());
+
+      let matchesStatus = true;
+      if (filterStatus !== 'all') {
+        matchesStatus = b.status === filterStatus;
+      }
+
+      return matchesSearch && matchesStatus;
+    });
+
+    return result.sort((a, b) => {
+      if (sortBy === 'date_newest') return new Date(b.date) - new Date(a.date);
+      if (sortBy === 'date_oldest') return new Date(a.date) - new Date(b.date);
+      return 0;
+    });
+  };
+
+  const processedBookings = getFilteredAndSorted();
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 -mx-8 -mt-8 mb-8">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Security Dashboard</h1>
+          <p className="text-sm text-slate-500">Security Demo Owner</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-slate-600">Hi, {user?.name || 'Security Demo Owner'}!</span>
+          <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="text-sm">
+            Logout
+          </Button>
+        </div>
+      </header>
+
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <h2 className="text-2xl font-bold text-slate-900">All Booking Details</h2>
+          
+          <div className="flex flex-wrap gap-3 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
+              <input
+                type="text"
+                placeholder="Search by customer/facility..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            </div>
+
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="booked">Booked</option>
+              <option value="pending_onsite">Pending Onsite</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="completed">Completed</option>
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            >
+              <option value="date_newest">Date: Newest First</option>
+              <option value="date_oldest">Date: Oldest First</option>
+            </select>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+          </div>
+        ) : processedBookings.length === 0 ? (
+          <p className="text-center text-slate-500 py-12 bg-slate-50 border rounded-xl text-sm">
+            No bookings found matching criteria.
+          </p>
+        ) : (
+          <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 border-b text-slate-700 font-semibold">
+                <tr>
+                  {['Customer Name', 'Property Name', 'Date', 'Time Slot', 'Payment Method', 'Total Amount', 'Booking Status', 'Attendance Status'].map(h => (
+                    <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {processedBookings.map(b => (
+                  <tr key={b._id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-4 py-3 font-medium text-slate-900">{b.customerId?.name || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-slate-600">{b.propertyId?.name || 'Unknown Facility'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{b.date ? new Date(b.date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{b.timeSlot?.start} – {b.timeSlot?.end}</td>
+                    <td className="px-4 py-3 capitalize text-slate-500">{b.paymentMethod}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">${b.totalAmount?.toFixed(2)}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={
+                        b.status === 'booked' ? 'success' : 
+                        b.status === 'cancelled' ? 'destructive' : 
+                        'warning'
+                      }>
+                        {b.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={
+                        b.attendanceStatus === 'confirmed' ? 'success' : 
+                        b.attendanceStatus === 'noShow' ? 'destructive' : 
+                        'warning'
+                      }>
+                        {b.attendanceStatus}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

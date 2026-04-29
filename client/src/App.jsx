@@ -21,7 +21,15 @@ import BookingFlow from './pages/BookingFlow';
 import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, CustomerComplaints } from './pages/dashboards/CustomerDashboard';
 import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerRescheduleRequests } from './pages/dashboards/OwnerDashboard';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
-import SecurityDashboard from './pages/dashboards/SecurityDashboard';
+import SecurityDashboard, { 
+  SecurityScanPage,
+  SecurityAvailabilityPage,
+  SecurityUpcomingPage,
+  SecurityCurrentPage,
+  SecurityEntryLogPage,
+  SecurityReportPage,
+  SecurityBookingDetailsPage
+} from './pages/dashboards/SecurityDashboard';
 
 function ProtectedRoute({ children, role }) {
   const { user } = useAuthStore();
@@ -97,12 +105,13 @@ function App() {
             <Route path="admin/events" element={<ProtectedRoute role="admin"><AdminEvents /></ProtectedRoute>} />
 
             {/* Security Routes */}
-            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="scanner" /></ProtectedRoute>} />
-            <Route path="availability" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="availability" /></ProtectedRoute>} />
-            <Route path="upcoming" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="upcoming" /></ProtectedRoute>} />
-            <Route path="current" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="current" /></ProtectedRoute>} />
-            <Route path="entry-log" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="entry-log" /></ProtectedRoute>} />
-            <Route path="report" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="report" /></ProtectedRoute>} />
+            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityScanPage /></ProtectedRoute>} />
+            <Route path="availability" element={<ProtectedRoute role="securityOfficer"><SecurityAvailabilityPage /></ProtectedRoute>} />
+            <Route path="upcoming" element={<ProtectedRoute role="securityOfficer"><SecurityUpcomingPage /></ProtectedRoute>} />
+            <Route path="current" element={<ProtectedRoute role="securityOfficer"><SecurityCurrentPage /></ProtectedRoute>} />
+            <Route path="entry-log" element={<ProtectedRoute role="securityOfficer"><SecurityEntryLogPage /></ProtectedRoute>} />
+            <Route path="report" element={<ProtectedRoute role="securityOfficer"><SecurityReportPage /></ProtectedRoute>} />
+            <Route path="booking-details" element={<ProtectedRoute role="securityOfficer"><SecurityBookingDetailsPage /></ProtectedRoute>} />
           </Route>
         </Route>
         

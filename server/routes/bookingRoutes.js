@@ -9,7 +9,8 @@ const {
   markAttendance, 
   getBookingById,
   getUpcomingSecurityBookings,
-  getCurrentSecurityBookings
+  getCurrentSecurityBookings,
+  getAllSecurityBookings
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middleware/auth');
 const Booking = require('../models/Booking');
@@ -17,6 +18,7 @@ const Property = require('../models/Property');
 
 router.route('/upcoming-security').get(protect, authorize('securityOfficer'), getUpcomingSecurityBookings);
 router.route('/current-security').get(protect, authorize('securityOfficer'), getCurrentSecurityBookings);
+router.route('/all-security').get(protect, authorize('securityOfficer'), getAllSecurityBookings);
 
 // Public endpoint to check slots
 router.route('/slots/:propertyId').get(getAvailableSlots);
