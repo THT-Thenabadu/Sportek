@@ -312,22 +312,42 @@ function BookingFlowInner() {
             </p>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Select Date</label>
-              <input
-                type="date"
-                value={selectedDate}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={e => {
-                  setSelectedDate(e.target.value);
-                  setSelectedSlot(null);
-                  setClientSecret('');
-                  setBookingId('');
-                  setLockedByMe(false);
-                  setTimeLeft(null);
-                }}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
+            {/* Date Selector */}
+            <div className="mb-5">
+              <p className="text-sm font-medium text-slate-700 mb-3">Select Date</p>
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 4 }, (_, i) => {
+                  const date = new Date();
+                  date.setDate(date.getDate() + i);
+                  const dateStr = date.toISOString().split('T')[0];
+                  const isSelected = selectedDate === dateStr;
+                  const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                  const dayNum = date.getDate();
+                  const month = date.toLocaleDateString('en-US', { month: 'short' });
+                  return (
+                    <button
+                      key={dateStr}
+                      onClick={() => {
+                        setSelectedDate(dateStr);
+                        setSelectedSlot(null);
+                        setClientSecret('');
+                        setBookingId('');
+                        setLockedByMe(false);
+                        setTimeLeft(null);
+                      }}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                        isSelected
+                          ? 'bg-primary-600 border-primary-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
+                      }`}
+                    >
+                      <span className="text-xs font-medium uppercase">{dayName}</span>
+                      <span className="text-2xl font-bold my-0.5">{dayNum}</span>
+                      <span className="text-xs">{month}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             {loadingSlots ? (
               <div className="flex justify-center py-10">

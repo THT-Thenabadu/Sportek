@@ -251,14 +251,14 @@ const stripeWebhook = async (req, res) => {
       if (booking) {
         booking.status = 'booked';
         // Generate QR data JSON payload that security staff will scan
-        const qrData = JSON.stringify({
-          bookingId: booking._id.toString(),
-          customerId: booking.customerId._id.toString(),
-          propertyName: booking.propertyId.name,
-          date: booking.date.toISOString().split('T')[0],
-          timeSlot: `${booking.timeSlot.start}-${booking.timeSlot.end}`
+        booking.qrCodeData = JSON.stringify({
+          bookingId: booking._id,
+          propertyId: booking.propertyId,
+          customerId: booking.customerId,
+          date: booking.date,
+          timeSlot: booking.timeSlot,
+          paymentMethod: 'online'
         });
-        booking.qrCodeData = qrData;
 
         // Assets are already bundled during createPaymentIntent.
         // We just ensure the booking is saved with the correct status and QR data.
