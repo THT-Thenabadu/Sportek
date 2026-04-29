@@ -47,6 +47,7 @@ function Sidebar() {
         { name: 'Reschedule Requests', path: '/dashboard/reschedule', icon: FileText },
         { name: 'My Bookings',   path: '/dashboard/bookings',   icon: Calendar },
         { name: 'My Tickets',    path: '/dashboard/tickets',    icon: Ticket   },
+        { name: 'Security Dashboard Credentials', path: '/dashboard/security-credentials', icon: ScanLine },
       ];
     }
 

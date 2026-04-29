@@ -1,16 +1,23 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import useAuthStore from '../../store/useAuthStore';
 import Navbar from './Navbar';
 import Footer from './Footer';
 
 function MainLayout() {
+  const { user } = useAuthStore();
+  const location = useLocation();
+  
+  // Hide navbar for security officers on dashboard pages
+  const isSecurityDashboard = user?.role === 'securityOfficer' && location.pathname.startsWith('/dashboard');
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navbar />
+      {!isSecurityDashboard && <Navbar />}
       <main className="flex-1 flex flex-col">
         <Outlet />
       </main>
-      <Footer />
+      {!isSecurityDashboard && <Footer />}
     </div>
   );
 }

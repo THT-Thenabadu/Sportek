@@ -20,6 +20,7 @@ import BookingFlow from './pages/BookingFlow';
 // Dashboard Pages
 import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, CustomerComplaints } from './pages/dashboards/CustomerDashboard';
 import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerRescheduleRequests } from './pages/dashboards/OwnerDashboard';
+import SecurityCredentials from './pages/dashboards/SecurityCredentials';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
 import SecurityDashboard, { 
   SecurityScanPage,
@@ -97,6 +98,7 @@ function App() {
             <Route path="assets" element={<ProtectedRoute role="propertyOwner"><OwnerAssets /></ProtectedRoute>} />
             <Route path="warnings" element={<ProtectedRoute role="propertyOwner"><OwnerWarnings /></ProtectedRoute>} />
             <Route path="reschedule" element={<ProtectedRoute role="propertyOwner"><OwnerRescheduleRequests /></ProtectedRoute>} />
+            <Route path="security-credentials" element={<ProtectedRoute role="propertyOwner"><SecurityCredentials /></ProtectedRoute>} />
 
             {/* Admin Routes */}
             <Route path="admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />

@@ -5,6 +5,8 @@ import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+import BookingQRCard from '../../components/BookingQRCard';
 import { CalendarDays, Clock, DollarSign, ShieldCheck, Ticket, MapPin } from 'lucide-react';
 
 function RescheduleModal({ booking, onClose, onSubmitted }) {
@@ -131,6 +133,7 @@ export function CustomerBookings() {
 
   const [rescheduleRequests, setRescheduleRequests] = useState([]);
   const [rescheduleBooking, setRescheduleBooking] = useState(null);
+  const [selectedBookingForQR, setSelectedBookingForQR] = useState(null);
 
   const fetchRescheduleRequests = () => {
     api.get('/reschedule/customer')
@@ -378,24 +381,10 @@ export function CustomerBookings() {
                         {renderQR(b.qrCodeData)}
                         <p className="text-xs text-slate-400 text-center mt-1 mb-2">Entry QR</p>
                         <button
-                          onClick={async () => {
-                            const encoded = encodeURIComponent(b._id);
-                            const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encoded}`;
-                            try {
-                              const response = await fetch(url);
-                              const blob = await response.blob();
-                              const link = document.createElement('a');
-                              link.href = URL.createObjectURL(blob);
-                              link.download = `booking-qr-${b._id}.png`;
-                              link.click();
-                              URL.revokeObjectURL(link.href);
-                            } catch (err) {
-                              console.error('Failed to download QR:', err);
-                            }
-                          }}
+                          onClick={() => setSelectedBookingForQR(b)}
                           className="text-[10px] text-blue-600 underline hover:text-blue-800 font-medium"
                         >
-                          Download QR
+                          View Full QR
                         </button>
                         {b.passkey && (
                           <div className="mt-2 text-center">
@@ -425,6 +414,15 @@ export function CustomerBookings() {
           onClose={() => setRescheduleBooking(null)} 
           onSubmitted={fetchRescheduleRequests}
         />
+      )}
+      
+      {/* QR Code Modal */}
+      {selectedBookingForQR && (
+        <Modal isOpen={true} onClose={() => setSelectedBookingForQR(null)}>
+          <div className="p-6">
+            <BookingQRCard booking={selectedBookingForQR} />
+          </div>
+        </Modal>
       )}
     </div>
   );
