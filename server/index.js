@@ -19,6 +19,7 @@ const applicationRoutes = require('./routes/applicationRoutes');
 const reviewRoutes = require('./routes/reviews');
 const complaintRoutes = require('./routes/complaints');
 const warningRoutes = require('./routes/warnings');
+const rescheduleRoutes = require('./routes/rescheduleRoutes');
 
 connectDB();
 
@@ -62,7 +63,8 @@ app.use((req, res, next) => {
 app.use('/api/properties', propertyRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/bookings', bookingRoutes);
-app.use('/api/payments', paymentRoutes); // Stripe webhook lives here: POST /api/payments/webhook
+app.use('/api/payments', paymentRoutes);
+app.use('/api/reschedule', rescheduleRoutes); // Stripe webhook lives here: POST /api/payments/webhook
 app.use('/api/events', eventRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/chat', chatRoutes);

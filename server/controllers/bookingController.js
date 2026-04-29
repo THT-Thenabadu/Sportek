@@ -39,10 +39,6 @@ const getAvailableSlots = async (req, res) => {
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
 
-    if (!isSameDay(targetDate, todayDate)) {
-      return res.status(400).json({ message: 'Bookings are only allowed for the current day' });
-    }
-
     const dateString = targetDate.toISOString().split('T')[0];
 
     const property = await Property.findById(propertyId);
@@ -80,7 +76,15 @@ const getAvailableSlots = async (req, res) => {
       let state = 'Available';
       let lockData = null;
 
-      if (bookedStarts.includes(slot.start)) {
+      const isBlocked = property.blockedSlots && property.blockedSlots.some(b => {
+        const bDate = new Date(b.date);
+        bDate.setHours(0,0,0,0);
+        return bDate.getTime() === targetDate.getTime() && b.timeSlot.start === slot.start;
+      });
+
+      if (isBlocked) {
+        state = 'Blocked';
+      } else if (bookedStarts.includes(slot.start)) {
         state = 'Booked';
       } else if (lockedStarts[slot.start]) {
         state = 'Pending';

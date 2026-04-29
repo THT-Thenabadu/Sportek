@@ -84,13 +84,18 @@ const updateProperty = async (req, res) => {
 
 // @desc    Delete a property
 // @route   DELETE /api/properties/:id
-// @access  Private/Admin
+// @access  Private/Owner or Admin
 const deleteProperty = async (req, res) => {
   try {
     const property = await Property.findById(req.params.id);
     if (!property) {
       return res.status(404).json({ message: 'Property not found' });
     }
+
+    if (property.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to delete this property' });
+    }
+
     await property.deleteOne();
     res.json({ message: 'Property removed' });
   } catch (error) {
@@ -167,6 +172,68 @@ const getPropertyAvailability = async (req, res) => {
   }
 };
 
+const blockSlot = async (req, res) => {
+  try {
+    const { date, timeSlotStart } = req.body;
+    const property = await Property.findById(req.params.id);
+    if (!property) return res.status(404).json({ message: 'Property not found' });
+    
+    if (property.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const targetDate = new Date(date);
+    targetDate.setHours(0,0,0,0);
+
+    const alreadyBlocked = property.blockedSlots && property.blockedSlots.some(b => {
+      const bDate = new Date(b.date);
+      bDate.setHours(0,0,0,0);
+      return bDate.getTime() === targetDate.getTime() &&
+             b.timeSlot.start === timeSlotStart;
+    });
+
+    if (!alreadyBlocked) {
+      property.blockedSlots = property.blockedSlots || [];
+      property.blockedSlots.push({ date: targetDate, timeSlot: { start: timeSlotStart } });
+      await property.save();
+    }
+
+    res.json(property);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const unblockSlot = async (req, res) => {
+  try {
+    const { date, timeSlotStart } = req.body;
+    const property = await Property.findById(req.params.id);
+    if (!property) return res.status(404).json({ message: 'Property not found' });
+    
+    if (property.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const targetDate = new Date(date);
+    targetDate.setHours(0,0,0,0);
+
+    if (property.blockedSlots) {
+      property.blockedSlots = property.blockedSlots.filter(b => {
+        const bDate = new Date(b.date);
+        bDate.setHours(0,0,0,0);
+        const match = bDate.getTime() === targetDate.getTime() &&
+                      b.timeSlot.start === timeSlotStart;
+        return !match;
+      });
+      await property.save();
+    }
+
+    res.json(property);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createProperty,
   getProperties,
@@ -174,5 +241,7 @@ module.exports = {
   updateProperty,
   deleteProperty,
   deactivateProperty,
-  getPropertyAvailability
+  getPropertyAvailability,
+  blockSlot,
+  unblockSlot
 };

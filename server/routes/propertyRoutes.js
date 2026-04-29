@@ -7,7 +7,9 @@ const {
   updateProperty, 
   deleteProperty, 
   deactivateProperty,
-  getPropertyAvailability
+  getPropertyAvailability,
+  blockSlot,
+  unblockSlot
 } = require('../controllers/propertyController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -21,9 +23,15 @@ router.route('/')
 router.route('/:id')
   .get(getPropertyById)
   .put(protect, authorize('admin', 'propertyOwner'), updateProperty)
-  .delete(protect, authorize('admin'), deleteProperty);
+  .delete(protect, authorize('admin', 'propertyOwner'), deleteProperty);
 
 router.route('/:id/deactivate')
   .patch(protect, authorize('admin', 'propertyOwner'), deactivateProperty);
+
+router.route('/:id/block-slot')
+  .patch(protect, authorize('admin', 'propertyOwner'), blockSlot);
+
+router.route('/:id/unblock-slot')
+  .patch(protect, authorize('admin', 'propertyOwner'), unblockSlot);
 
 module.exports = router;

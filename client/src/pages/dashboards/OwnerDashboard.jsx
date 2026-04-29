@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../lib/axios';
 import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -86,9 +86,177 @@ function AddPropertyModal({ onClose, onAdded }) {
   );
 }
 
+function ManageSlotsModal({ property, onClose }) {
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchSlots = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.get(`/bookings/slots/${property._id}`, { params: { date: selectedDate } });
+      setSlots(res.data.slots || res.data || []);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to fetch slots.');
+    } finally {
+      setLoading(false);
+    }
+  }, [property._id, selectedDate]);
+
+  useEffect(() => {
+    fetchSlots();
+  }, [fetchSlots]);
+
+  const toggleBlock = async (slot) => {
+    try {
+      if (slot.state === 'Blocked') {
+        await api.patch(`/properties/${property._id}/unblock-slot`, { date: selectedDate, timeSlotStart: slot.start });
+      } else {
+        await api.patch(`/properties/${property._id}/block-slot`, { date: selectedDate, timeSlotStart: slot.start });
+      }
+      fetchSlots();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update slot status');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between pb-4 border-b mb-4">
+          <h2 className="text-xl font-bold text-slate-900">Manage Slots - {property.name}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
+          <input 
+            type="date" 
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            value={selectedDate} 
+            onChange={e => setSelectedDate(e.target.value)} 
+          />
+        </div>
+
+        {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm mb-4">{error}</div>}
+
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" /></div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {slots.map(s => {
+              const isBooked = s.state === 'Booked';
+              const isBlocked = s.state === 'Blocked';
+              return (
+                <button
+                  key={s.start}
+                  disabled={isBooked}
+                  onClick={() => toggleBlock(s)}
+                  className={`p-3 text-sm font-medium rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${
+                    isBooked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' :
+                    isBlocked ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' :
+                    'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  <span>{s.start} - {s.end}</span>
+                  <span className="text-xs opacity-75">{isBooked ? 'Booked' : isBlocked ? 'Blocked' : 'Available'}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditPropertyModal({ property, onClose, onUpdated }) {
+  const [form, setForm] = useState({
+    name: property.name || '',
+    sportType: property.sportType || '',
+    description: property.description || '',
+    pricePerHour: property.pricePerHour || '',
+    locationAddress: property.location?.address || '',
+    availableStart: property.availableHours?.start || '06:00',
+    availableEnd: property.availableHours?.end || '22:00',
+    slotDurationMinutes: property.slotDurationMinutes || 60,
+    imageUrl: property.images && property.images.length > 0 ? property.images[0] : '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name: form.name,
+        sportType: form.sportType,
+        description: form.description,
+        pricePerHour: Number(form.pricePerHour),
+        location: { address: form.locationAddress },
+        availableHours: { start: form.availableStart, end: form.availableEnd },
+        slotDurationMinutes: Number(form.slotDurationMinutes),
+        images: form.imageUrl ? [form.imageUrl] : [],
+      };
+      const res = await api.put(`/properties/${property._id}`, payload);
+      onUpdated(res.data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update property.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b">
+          <h2 className="text-xl font-bold text-slate-900">Edit Property</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
+          <Input label="Property Name" required placeholder="e.g. Sunrise Football Ground" value={form.name} onChange={e => set('name', e.target.value)} />
+          <Input label="Sport Type" required placeholder="e.g. Football, Tennis, Cricket" value={form.sportType} onChange={e => set('sportType', e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <textarea rows={3} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" placeholder="Describe the facility..." value={form.description} onChange={e => set('description', e.target.value)} />
+          </div>
+          <Input label="Price Per Hour ($)" type="number" required min="1" placeholder="e.g. 50" value={form.pricePerHour} onChange={e => set('pricePerHour', e.target.value)} />
+          <Input label="Address" required placeholder="e.g. 10 Sports Lane, Colombo 07" value={form.locationAddress} onChange={e => set('locationAddress', e.target.value)} />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Available From" type="time" required value={form.availableStart} onChange={e => set('availableStart', e.target.value)} />
+            <Input label="Available Until" type="time" required value={form.availableEnd} onChange={e => set('availableEnd', e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Slot Duration (minutes)</label>
+            <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={form.slotDurationMinutes} onChange={e => set('slotDurationMinutes', e.target.value)}>
+              {[30, 60, 90, 120].map(m => <option key={m} value={m}>{m} min</option>)}
+            </select>
+          </div>
+          <Input label="Image URL (optional)" placeholder="https://..." value={form.imageUrl} onChange={e => set('imageUrl', e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2 border-t mt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" isLoading={saving}>Save Changes</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function OwnerProperties() {
   const [properties, setProperties] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingProperty, setEditingProperty] = useState(null);
+  const [slotProperty, setSlotProperty] = useState(null);
   const [securityCreds, setSecurityCreds] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [copiedField, setCopiedField] = useState('');
@@ -125,6 +293,17 @@ export function OwnerProperties() {
       setSecurityCreds(null);
     } catch (err) {
       alert('Failed to dismiss credentials');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this property? This cannot be undone')) {
+      try {
+        await api.delete(`/properties/${id}`);
+        setProperties(prev => prev.filter(p => p._id !== id));
+      } catch (err) {
+        alert(err.response?.data?.message || 'Failed to delete property');
+      }
     }
   };
 
@@ -180,6 +359,21 @@ export function OwnerProperties() {
       )}
 
       {showModal && <AddPropertyModal onClose={() => setShowModal(false)} onAdded={handleAdded} />}
+      {editingProperty && (
+        <EditPropertyModal 
+          property={editingProperty} 
+          onClose={() => setEditingProperty(null)} 
+          onUpdated={(updated) => {
+            setProperties(prev => prev.map(p => p._id === updated._id ? updated : p));
+          }} 
+        />
+      )}
+      {slotProperty && (
+        <ManageSlotsModal 
+          property={slotProperty} 
+          onClose={() => setSlotProperty(null)} 
+        />
+      )}
       <Card>
         <CardHeader className="flex justify-between flex-row items-center">
           <CardTitle>My Properties</CardTitle>
@@ -194,8 +388,17 @@ export function OwnerProperties() {
                 <p className="text-sm text-slate-500">{p.sportType} · {p.location?.address}</p>
                 <p className="text-sm font-semibold mt-1">${p.pricePerHour} / hour · {p.availableHours?.start} – {p.availableHours?.end}</p>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline">Edit</Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant="outline" className="border-primary-200 text-primary-700 hover:bg-primary-50" onClick={() => setSlotProperty(p)}>Manage Slots</Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingProperty(p)}>Edit</Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => handleDelete(p._id)}
+                >
+                  Delete
+                </Button>
               </div>
             </div>
           ))}
@@ -522,3 +725,182 @@ export function OwnerWarnings() {
   );
 }
 
+export function OwnerRescheduleRequests() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [messageModal, setMessageModal] = useState(null);
+  const [ownerMessage, setOwnerMessage] = useState('');
+  const [submittingAction, setSubmittingAction] = useState(false);
+
+  const fetchRequests = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.get('/reschedule/owner');
+      setRequests(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load reschedule requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  const handleApprove = async (id) => {
+    setSubmittingAction(true);
+    try {
+      await api.patch(`/reschedule/${id}/approve`);
+      alert('Request approved successfully.');
+      fetchRequests();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to approve request.');
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleDecline = async (e) => {
+    e.preventDefault();
+    if (!messageModal) return;
+    setSubmittingAction(true);
+    try {
+      await api.patch(`/reschedule/${messageModal._id}/decline`, { ownerMessage });
+      alert('Request declined with message.');
+      setMessageModal(null);
+      setOwnerMessage('');
+      fetchRequests();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to decline request.');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold text-slate-900">Reschedule Requests</h1>
+
+      {error && <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm">{error}</div>}
+
+      {requests.length === 0 ? (
+        <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg text-center text-sm text-slate-500">
+          No pending reschedule requests.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full border-collapse text-left text-sm text-slate-700">
+            <thead className="bg-slate-50 font-semibold text-slate-900">
+              <tr>
+                <th className="px-6 py-4">Customer Name</th>
+                <th className="px-6 py-4">Property</th>
+                <th className="px-6 py-4">Current Slot</th>
+                <th className="px-6 py-4">Requested Slot</th>
+                <th className="px-6 py-4">Institution Match</th>
+                <th className="px-6 py-4">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {requests.map(r => (
+                <tr key={r._id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 font-medium text-slate-900">{r.customerId?.name || 'Unknown Customer'}</td>
+                  <td className="px-6 py-4">{r.propertyId?.name || 'Property'}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span>{r.currentDate ? new Date(r.currentDate).toLocaleDateString() : '—'}</span>
+                      <span className="text-xs text-slate-500">{r.currentTimeSlot?.start} - {r.currentTimeSlot?.end}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col font-semibold text-primary-700">
+                      <span>{r.requestedDate ? new Date(r.requestedDate).toLocaleDateString() : '—'}</span>
+                      <span className="text-xs">{r.requestedTimeSlot?.start} - {r.requestedTimeSlot?.end}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {r.sameInstitution ? (
+                      <Badge variant="success" className="bg-blue-50 text-blue-700 border-blue-200">Same Institution</Badge>
+                    ) : (
+                      <span className="text-xs text-slate-400">No Match</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex gap-2">
+                      {r.isSlotAvailable ? (
+                        <Button 
+                          size="sm" 
+                          disabled={submittingAction} 
+                          onClick={() => handleApprove(r._id)}
+                        >
+                          Approve
+                        </Button>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="border-primary-500 text-primary-700 hover:bg-primary-50"
+                          onClick={() => {
+                            setMessageModal(r);
+                            setOwnerMessage('The requested slot is already booked by another customer.');
+                          }}
+                        >
+                          Send Message
+                        </Button>
+                      )}
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        disabled={submittingAction} 
+                        onClick={() => setMessageModal(r)}
+                      >
+                        Decline with Message
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {messageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between pb-4 border-b mb-4">
+              <h2 className="text-xl font-bold text-slate-900">Send Message / Decline</h2>
+              <button onClick={() => { setMessageModal(null); setOwnerMessage(''); }} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+            </div>
+            <form onSubmit={handleDecline} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Message to Customer</label>
+                <textarea 
+                  rows={3} 
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  value={ownerMessage}
+                  onChange={e => setOwnerMessage(e.target.value)}
+                  placeholder="Explain why the request is declined..."
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => { setMessageModal(null); setOwnerMessage(''); }}>Cancel</Button>
+                <Button type="submit" isLoading={submittingAction}>Send & Decline</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

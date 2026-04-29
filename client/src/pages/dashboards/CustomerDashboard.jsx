@@ -7,12 +7,123 @@ import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { CalendarDays, Clock, DollarSign, ShieldCheck, Ticket, MapPin } from 'lucide-react';
 
+function RescheduleModal({ booking, onClose, onSubmitted }) {
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!booking) return;
+    setLoadingSlots(true);
+    setError('');
+    api.get(`/bookings/slots/${booking.propertyId._id}`, { params: { date: selectedDate } })
+      .then(r => {
+        const fetchedSlots = r.data.slots || r.data || [];
+        setSlots(fetchedSlots.filter(s => s.state === 'Available'));
+        setLoadingSlots(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.message || 'Failed to load slots');
+        setLoadingSlots(false);
+      });
+  }, [booking, selectedDate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedSlot) return setError('Please select a time slot.');
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.post('/reschedule', {
+        bookingId: booking._id,
+        requestedDate: selectedDate,
+        requestedTimeSlot: selectedSlot
+      });
+      onSubmitted();
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to submit reschedule request.');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between pb-4 border-b mb-4">
+          <h2 className="text-xl font-bold text-slate-900">Request Reschedule</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Select New Date</label>
+            <input 
+              type="date" 
+              required
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              value={selectedDate} 
+              onChange={e => setSelectedDate(e.target.value)} 
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Available Slots</label>
+            {loadingSlots ? (
+              <div className="py-4 flex justify-center"><div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" /></div>
+            ) : slots.length === 0 ? (
+              <p className="text-slate-500 text-sm py-2">No available slots for this date.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1">
+                {slots.map(s => (
+                  <button
+                    type="button"
+                    key={s.start}
+                    onClick={() => setSelectedSlot(s)}
+                    className={`p-2 text-sm font-medium rounded-lg border transition-all ${
+                      selectedSlot && selectedSlot.start === s.start
+                        ? 'bg-primary-600 border-primary-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500 hover:text-primary-600'
+                    }`}
+                  >
+                    {s.start} - {s.end}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" isLoading={submitting} disabled={!selectedSlot}>Submit Request</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function CustomerBookings() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('confirmed');
   const [sortBy, setSortBy] = useState('date_newest');
+
+  const [rescheduleRequests, setRescheduleRequests] = useState([]);
+  const [rescheduleBooking, setRescheduleBooking] = useState(null);
+
+  const fetchRescheduleRequests = () => {
+    api.get('/reschedule/customer')
+      .then(res => setRescheduleRequests(Array.isArray(res.data) ? res.data : []))
+      .catch(console.error);
+  };
 
   useEffect(() => {
     api.get('/bookings/my-bookings')
@@ -25,6 +136,7 @@ export function CustomerBookings() {
         setError(err.response?.data?.message || 'Could not load bookings. Please try again.');
         setLoading(false);
       });
+    fetchRescheduleRequests();
   }, []);
 
   const isBookingExpired = (b) => {
@@ -171,6 +283,9 @@ export function CustomerBookings() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {sortedBookings.map(b => {
             const cfg = statusConfig(b.status);
+            const reqForBooking = rescheduleRequests
+              .filter(r => r.bookingId === b._id)
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
             return (
               <Card key={b._id} className="overflow-hidden hover:shadow-md transition-shadow">
                 {/* Header */}
@@ -202,6 +317,36 @@ export function CustomerBookings() {
                         <ShieldCheck className="w-4 h-4 text-slateink-400 shrink-0" />
                         <span className="capitalize">{b.attendanceStatus}</span>
                       </div>
+                    )}
+                    {reqForBooking && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        {reqForBooking.status === 'pending' && (
+                          <Badge variant="warning">Reschedule Pending</Badge>
+                        )}
+                        {reqForBooking.status === 'approved' && (
+                          <Badge variant="success">Reschedule Approved</Badge>
+                        )}
+                        {reqForBooking.status === 'declined' && (
+                          <div>
+                            <Badge variant="destructive">Reschedule Declined</Badge>
+                            {reqForBooking.ownerMessage && (
+                              <p className="text-xs text-slate-500 mt-1 italic">Reason: {reqForBooking.ownerMessage}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!isBookingExpired(b) && b.status === 'booked' && (!reqForBooking || reqForBooking.status !== 'pending') && (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="mt-3 flex items-center gap-1 text-xs font-semibold py-1 px-2 border-primary-200 text-primary-700 hover:bg-primary-50"
+                        onClick={() => setRescheduleBooking(b)}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        Request Reschedule
+                      </Button>
                     )}
                   </div>
 
@@ -257,6 +402,13 @@ export function CustomerBookings() {
             );
           })}
         </div>
+      )}
+      {rescheduleBooking && (
+        <RescheduleModal 
+          booking={rescheduleBooking} 
+          onClose={() => setRescheduleBooking(null)} 
+          onSubmitted={fetchRescheduleRequests}
+        />
       )}
     </div>
   );

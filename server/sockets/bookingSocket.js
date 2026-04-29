@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const { lockedSlots } = require('../services/lockService');
+const Property = require('../models/Property');
 
 let io;
 
@@ -28,14 +29,35 @@ const initSocket = (server) => {
     });
 
     // lock_slot event
-    socket.on('lock_slot', ({ propertyId, date, timeSlotStart, userId }) => {
+    socket.on('lock_slot', async ({ propertyId, date, timeSlotStart, userId }) => {
       const slotKey = `${propertyId}_${date}_${timeSlotStart}`;
 
-      // Prevent simultaneous locks on the same slot
-      if (lockedSlots.has(slotKey)) {
-        socket.emit('lock_error', { message: 'Slot is already locked by another user' });
-        return;
-      }
+      try {
+        const property = await Property.findById(propertyId);
+        if (!property) {
+          socket.emit('lock_error', { message: 'Property not found' });
+          return;
+        }
+
+        const targetDate = new Date(date);
+        targetDate.setHours(0,0,0,0);
+        const alreadyBlocked = property.blockedSlots && property.blockedSlots.some(b => {
+          const bDate = new Date(b.date);
+          bDate.setHours(0,0,0,0);
+          return bDate.getTime() === targetDate.getTime() &&
+                 b.timeSlot.start === timeSlotStart;
+        });
+
+        if (alreadyBlocked) {
+          socket.emit('lock_error', { message: 'This slot is manually blocked by the owner.' });
+          return;
+        }
+
+        // Prevent simultaneous locks on the same slot
+        if (lockedSlots.has(slotKey)) {
+          socket.emit('lock_error', { message: 'Slot is already locked by another user' });
+          return;
+        }
 
       // Enforce maximum of 2 pending slot locks per customer
       const userLockCount = [...lockedSlots.values()].filter(v => v.userId === userId).length;
@@ -60,6 +82,9 @@ const initSocket = (server) => {
       const payload = { propertyId, date, timeSlotStart, userId, expiresAt };
       io.to(`property_${propertyId}`).emit('slot_locked', payload);
       socket.emit('lock_success', payload);
+      } catch (err) {
+        socket.emit('lock_error', { message: err.message });
+      }
     });
 
     // release_slot event

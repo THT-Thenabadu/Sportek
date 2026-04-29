@@ -170,13 +170,19 @@ function FacilityDetails() {
                  <span className="font-bold text-slate-700">4.8</span>
                  <span className="text-slate-500 underline">(124 reviews)</span>
               </div>
-              <Button 
-                size="lg" 
-                className="w-full text-lg shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5"
-                onClick={handleBookClick}
-              >
-                Book Now
-              </Button>
+              {user && (user.role === 'propertyOwner' || user.role === 'securityOfficer') ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 text-center font-medium">
+                  Property owners and security officers cannot make bookings
+                </div>
+              ) : (
+                <Button 
+                  size="lg" 
+                  className="w-full text-lg shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5"
+                  onClick={handleBookClick}
+                >
+                  Book Now
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

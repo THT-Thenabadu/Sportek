@@ -19,7 +19,13 @@ const propertySchema = new mongoose.Schema({
   },
   slotDurationMinutes: { type: Number, default: 60 },
   isActive: { type: Boolean, default: true },
-  averageRating: { type: Number, default: 0 }
+  averageRating: { type: Number, default: 0 },
+  blockedSlots: [{
+    date: { type: Date, required: true },
+    timeSlot: {
+      start: { type: String, required: true }
+    }
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Property', propertySchema);

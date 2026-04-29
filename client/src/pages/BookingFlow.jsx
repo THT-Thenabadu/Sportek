@@ -86,6 +86,17 @@ function BookingFlowInner() {
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
 
+  // ── Redirect Restricted Roles ──
+  useEffect(() => {
+    if (user && (user.role === 'propertyOwner' || user.role === 'securityOfficer')) {
+      if (user.role === 'propertyOwner') {
+        navigate('/dashboard/properties');
+      } else if (user.role === 'securityOfficer') {
+        navigate('/dashboard/scan');
+      }
+    }
+  }, [user, navigate]);
+
   // ── Fetch property info ──
   useEffect(() => {
     api.get(`/properties/${propertyId}`).then(r => setProperty(r.data)).catch(console.error);
