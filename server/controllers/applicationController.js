@@ -88,7 +88,7 @@ const updateApplicationStatus = async (req, res) => {
       const owner = application.applicantId;
 
       // 1. Promote applicant to propertyOwner
-      await User.findByIdAndUpdate(owner._id, { role: 'propertyOwner' });
+      await User.findByIdAndUpdate(owner._id, { role: 'propertyOwner', institution: application.businessName });
 
       // 2. Prevent duplicate security officers
       const existingOfficer = await User.findOne({

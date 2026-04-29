@@ -5,7 +5,7 @@ const Property = require('../models/Property');
 // @access  Private/Owner or Admin
 const createProperty = async (req, res) => {
   try {
-    const { name, sportType, description, images, pricePerHour, location, availableHours, slotDurationMinutes } = req.body;
+    const { name, sportType, description, images, pricePerHour, location, availableHours, slotDurationMinutes, institution } = req.body;
     
     // Check if user is trying to set ownerId (only admin can assign to others, owner creates for self)
     const ownerId = req.user.role === 'admin' && req.body.ownerId ? req.body.ownerId : req.user._id;
@@ -15,7 +15,7 @@ const createProperty = async (req, res) => {
 
     const property = await Property.create({
       ownerId,
-      institution: owner?.institution || '',
+      institution: institution || owner?.institution || '',
       name,
       sportType,
       description,
@@ -29,6 +29,18 @@ const createProperty = async (req, res) => {
     res.status(201).json(property);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+};
+
+// @desc    Get my properties
+// @route   GET /api/properties/my-properties
+// @access  Private/Owner or Admin
+const getMyProperties = async (req, res) => {
+  try {
+    const properties = await Property.find({ ownerId: req.user._id }).populate('ownerId', 'name email');
+    res.json(properties);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -237,6 +249,7 @@ const unblockSlot = async (req, res) => {
 module.exports = {
   createProperty,
   getProperties,
+  getMyProperties,
   getPropertyById,
   updateProperty,
   deleteProperty,

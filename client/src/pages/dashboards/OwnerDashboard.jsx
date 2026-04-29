@@ -5,8 +5,10 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import { Copy, CheckCircle, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import useAuthStore from '../../store/useAuthStore';
 
 function AddPropertyModal({ onClose, onAdded }) {
+  const { user } = useAuthStore();
   const [form, setForm] = useState({
     name: '',
     sportType: '',
@@ -17,6 +19,7 @@ function AddPropertyModal({ onClose, onAdded }) {
     availableEnd: '22:00',
     slotDurationMinutes: 60,
     imageUrl: '',
+    institution: user?.institution || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -37,6 +40,7 @@ function AddPropertyModal({ onClose, onAdded }) {
         availableHours: { start: form.availableStart, end: form.availableEnd },
         slotDurationMinutes: Number(form.slotDurationMinutes),
         images: form.imageUrl ? [form.imageUrl] : [],
+        institution: form.institution,
       };
       const res = await api.post('/properties', payload);
       onAdded(res.data);
@@ -58,6 +62,7 @@ function AddPropertyModal({ onClose, onAdded }) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
           <Input label="Property Name" required placeholder="e.g. Sunrise Football Ground" value={form.name} onChange={e => set('name', e.target.value)} />
+          <Input label="Institution / Business Name" required placeholder="e.g. Elite Sports Centre" value={form.institution} onChange={e => set('institution', e.target.value)} />
           <Input label="Sport Type" required placeholder="e.g. Football, Tennis, Cricket" value={form.sportType} onChange={e => set('sportType', e.target.value)} />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
@@ -262,7 +267,7 @@ export function OwnerProperties() {
   const [copiedField, setCopiedField] = useState('');
 
   useEffect(() => {
-    api.get('/properties').then(res => setProperties(res.data)).catch(console.error);
+    api.get('/properties/my-properties').then(res => setProperties(res.data)).catch(console.error);
     
     // Fetch owner application to check for new security officer credentials
     api.get('/applications/my-application').then(res => {
@@ -543,7 +548,7 @@ export function OwnerAssets() {
   const [editingAsset, setEditingAsset] = useState(null);
 
   useEffect(() => {
-    api.get('/properties').then(async (propRes) => {
+    api.get('/properties/my-properties').then(async (propRes) => {
       if (propRes.data.length > 0) {
         const pid = propRes.data[0]._id;
         setPropertyId(pid);
