@@ -58,12 +58,23 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
     const { propertyId, date, timeSlotStart, timeSlotEnd } = req.body;
     const property = await Property.findById(propertyId);
     if (!property) return res.status(404).json({ message: 'Property not found' });
+    // Remove any pending online booking for this slot by this customer
+    await Booking.deleteOne({
+      propertyId,
+      customerId: req.user._id,
+      date: new Date(date),
+      'timeSlot.start': timeSlotStart,
+      status: 'pending'
+    });
+
+    console.log('Onsite booking attempt:', { propertyId, date, timeSlotStart, status: ['booked', 'pending_onsite'] });
     const existing = await Booking.findOne({
       propertyId,
       date: new Date(date),
       'timeSlot.start': timeSlotStart,
       status: { $in: ['booked', 'pending_onsite'] }
     });
+    console.log('Existing booking found:', existing);
     if (existing) return res.status(400).json({ message: 'This slot is already taken' });
     const booking = await Booking.create({
       propertyId,
