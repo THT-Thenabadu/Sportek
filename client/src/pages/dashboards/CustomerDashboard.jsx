@@ -12,6 +12,7 @@ function RescheduleModal({ booking, onClose, onSubmitted }) {
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const [customerMessage, setCustomerMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -40,7 +41,8 @@ function RescheduleModal({ booking, onClose, onSubmitted }) {
       await api.post('/reschedule', {
         bookingId: booking._id,
         requestedDate: selectedDate,
-        requestedTimeSlot: selectedSlot
+        requestedTimeSlot: selectedSlot,
+        customerMessage
       });
       onSubmitted();
       onClose();
@@ -99,6 +101,17 @@ function RescheduleModal({ booking, onClose, onSubmitted }) {
             )}
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Message to Owner</label>
+            <textarea 
+              rows={3} 
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              value={customerMessage}
+              onChange={e => setCustomerMessage(e.target.value)}
+              placeholder="Type your message to the property owner..."
+            />
+          </div>
+
           <div className="flex justify-end gap-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" isLoading={submitting} disabled={!selectedSlot}>Submit Request</Button>
@@ -151,14 +164,14 @@ export function CustomerBookings() {
   const getFilteredBookings = () => {
     return bookings.filter(b => {
       const expired = isBookingExpired(b);
-      if (activeTab === 'expired') return expired;
-      if (expired) return false;
-
+      if (activeTab === 'confirmed') {
+        return b.status === 'booked' || b.status === 'completed';
+      }
       if (activeTab === 'pending') {
         return b.status === 'pending' || b.status === 'pending_onsite';
       }
-      if (activeTab === 'confirmed') {
-        return b.status === 'booked';
+      if (activeTab === 'expired') {
+        return expired && b.status !== 'booked' && b.status !== 'completed';
       }
       return true;
     });
@@ -324,7 +337,10 @@ export function CustomerBookings() {
                           <Badge variant="warning">Reschedule Pending</Badge>
                         )}
                         {reqForBooking.status === 'approved' && (
-                          <Badge variant="success">Reschedule Approved</Badge>
+                          <div>
+                            <Badge variant="success">Reschedule Approved</Badge>
+                            <p className="text-xs text-green-600 mt-1 font-semibold">It was rescheduled to another date.</p>
+                          </div>
                         )}
                         {reqForBooking.status === 'declined' && (
                           <div>
@@ -337,7 +353,7 @@ export function CustomerBookings() {
                       </div>
                     )}
 
-                    {!isBookingExpired(b) && b.status === 'booked' && (!reqForBooking || reqForBooking.status !== 'pending') && (
+                    {(b.status === 'booked' || b.status === 'pending_onsite' || b.status === 'pending') && (!reqForBooking || reqForBooking.status !== 'pending') && (
                       <Button 
                         size="sm" 
                         variant="outline" 
@@ -345,7 +361,7 @@ export function CustomerBookings() {
                         onClick={() => setRescheduleBooking(b)}
                       >
                         <Clock className="w-3.5 h-3.5" />
-                        Request Reschedule
+                        Request Change
                       </Button>
                     )}
                   </div>

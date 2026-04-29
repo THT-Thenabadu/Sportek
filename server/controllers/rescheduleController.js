@@ -7,7 +7,7 @@ const Property = require('../models/Property');
 // @access  Private/Customer
 const createRescheduleRequest = async (req, res) => {
   try {
-    const { bookingId, requestedDate, requestedTimeSlot } = req.body;
+    const { bookingId, requestedDate, requestedTimeSlot, customerMessage } = req.body;
     const booking = await Booking.findById(bookingId).populate('propertyId');
 
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
@@ -27,6 +27,7 @@ const createRescheduleRequest = async (req, res) => {
       currentTimeSlot: booking.timeSlot,
       requestedDate,
       requestedTimeSlot,
+      customerMessage: customerMessage || '',
       status: 'pending',
       sameInstitution
     });
@@ -88,6 +89,7 @@ const getOwnerRescheduleRequests = async (req, res) => {
 // @access  Private/Owner
 const approveRescheduleRequest = async (req, res) => {
   try {
+    const { newDate, newTimeSlot } = req.body;
     const request = await RescheduleRequest.findById(req.params.id).populate('propertyId');
     if (!request) return res.status(404).json({ message: 'Request not found' });
 
@@ -95,28 +97,33 @@ const approveRescheduleRequest = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    const finalDate = newDate || request.requestedDate;
+    const finalTimeSlot = newTimeSlot || request.requestedTimeSlot;
+
     // Check slot availability
     const existingBooking = await Booking.findOne({
+      _id: { $ne: request.bookingId },
       propertyId: request.propertyId._id,
-      date: request.requestedDate,
-      'timeSlot.start': request.requestedTimeSlot.start,
+      date: finalDate,
+      'timeSlot.start': finalTimeSlot.start,
       status: { $in: ['booked', 'completed'] }
     });
 
     if (existingBooking) {
-      return res.status(400).json({ message: 'The requested slot is already booked by another customer.' });
+      return res.status(400).json({ message: 'The selected slot is already booked by another customer.' });
     }
 
     // Update booking
     const booking = await Booking.findById(request.bookingId);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-    booking.date = request.requestedDate;
-    booking.timeSlot = request.requestedTimeSlot;
+    booking.date = finalDate;
+    booking.timeSlot = finalTimeSlot;
     await booking.save();
 
     // Update request
     request.status = 'approved';
+    request.rescheduledTo = { date: finalDate, timeSlot: finalTimeSlot };
     await request.save();
 
     res.json({ message: 'Reschedule request approved', request });

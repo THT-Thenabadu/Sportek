@@ -15,7 +15,15 @@ const rescheduleRequestSchema = new mongoose.Schema({
     end: { type: String, required: true }
   },
   status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
+  customerMessage: { type: String, default: '' },
   ownerMessage: { type: String, default: '' },
+  rescheduledTo: {
+    date: { type: Date },
+    timeSlot: {
+      start: { type: String },
+      end: { type: String }
+    }
+  },
   sameInstitution: { type: Boolean, default: false }
 }, { timestamps: true });
 

@@ -730,11 +730,120 @@ export function OwnerWarnings() {
   );
 }
 
+function OwnerRescheduleModal({ request, onClose, onApproved }) {
+  const [selectedDate, setSelectedDate] = useState(request.requestedDate ? request.requestedDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState(request.requestedTimeSlot || null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!request) return;
+    setLoadingSlots(true);
+    setError('');
+    api.get(`/bookings/slots/${request.propertyId._id}`, { params: { date: selectedDate } })
+      .then(r => {
+        const fetchedSlots = r.data.slots || r.data || [];
+        setSlots(fetchedSlots.filter(s => s.state === 'Available' || (s.start === request.requestedTimeSlot?.start && selectedDate === (request.requestedDate ? request.requestedDate.split('T')[0] : ''))));
+        setLoadingSlots(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.message || 'Failed to load slots');
+        setLoadingSlots(false);
+      });
+  }, [request, selectedDate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedSlot) return setError('Please select a time slot.');
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.patch(`/reschedule/${request._id}/approve`, {
+        newDate: selectedDate,
+        newTimeSlot: selectedSlot
+      });
+      onApproved();
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reschedule.');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between pb-4 border-b mb-4">
+          <h2 className="text-xl font-bold text-slate-900">Reschedule Booking</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
+
+          {request.customerMessage && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
+              <span className="font-semibold block mb-1">Customer Message:</span>
+              "{request.customerMessage}"
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
+            <input 
+              type="date" 
+              required
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              value={selectedDate} 
+              onChange={e => setSelectedDate(e.target.value)} 
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Available Slots</label>
+            {loadingSlots ? (
+              <div className="py-4 flex justify-center"><div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" /></div>
+            ) : slots.length === 0 ? (
+              <p className="text-slate-500 text-sm py-2">No available slots for this date.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1">
+                {slots.map(s => (
+                  <button
+                    type="button"
+                    key={s.start}
+                    onClick={() => setSelectedSlot(s)}
+                    className={`p-2 text-sm font-medium rounded-lg border transition-all ${
+                      selectedSlot && selectedSlot.start === s.start
+                        ? 'bg-primary-600 border-primary-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500 hover:text-primary-600'
+                    }`}
+                  >
+                    {s.start} - {s.end}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" isLoading={submitting} disabled={!selectedSlot}>Confirm & Approve</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function OwnerRescheduleRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [messageModal, setMessageModal] = useState(null);
+  const [rescheduleModal, setRescheduleModal] = useState(null);
   const [ownerMessage, setOwnerMessage] = useState('');
   const [submittingAction, setSubmittingAction] = useState(false);
 
@@ -818,7 +927,14 @@ export function OwnerRescheduleRequests() {
             <tbody className="divide-y divide-slate-200">
               {requests.map(r => (
                 <tr key={r._id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 font-medium text-slate-900">{r.customerId?.name || 'Unknown Customer'}</td>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-slate-900">{r.customerId?.name || 'Unknown Customer'}</div>
+                    {r.customerMessage && (
+                      <div className="text-xs text-slate-500 mt-1 italic truncate max-w-xs" title={r.customerMessage}>
+                        Msg: "{r.customerMessage}"
+                      </div>
+                    )}
+                  </td>
                   <td className="px-6 py-4">{r.propertyId?.name || 'Property'}</td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
@@ -841,34 +957,20 @@ export function OwnerRescheduleRequests() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      {r.isSlotAvailable ? (
-                        <Button 
-                          size="sm" 
-                          disabled={submittingAction} 
-                          onClick={() => handleApprove(r._id)}
-                        >
-                          Approve
-                        </Button>
-                      ) : (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          className="border-primary-500 text-primary-700 hover:bg-primary-50"
-                          onClick={() => {
-                            setMessageModal(r);
-                            setOwnerMessage('The requested slot is already booked by another customer.');
-                          }}
-                        >
-                          Send Message
-                        </Button>
-                      )}
+                      <Button 
+                        size="sm" 
+                        disabled={submittingAction} 
+                        onClick={() => setRescheduleModal(r)}
+                      >
+                        Reschedule / Approve
+                      </Button>
                       <Button 
                         size="sm" 
                         variant="outline"
                         disabled={submittingAction} 
                         onClick={() => setMessageModal(r)}
                       >
-                        Decline with Message
+                        Decline
                       </Button>
                     </div>
                   </td>
@@ -905,6 +1007,14 @@ export function OwnerRescheduleRequests() {
             </form>
           </div>
         </div>
+      )}
+
+      {rescheduleModal && (
+        <OwnerRescheduleModal 
+          request={rescheduleModal} 
+          onClose={() => setRescheduleModal(null)} 
+          onApproved={() => { alert('Rescheduled successfully.'); fetchRequests(); }} 
+        />
       )}
     </div>
   );
