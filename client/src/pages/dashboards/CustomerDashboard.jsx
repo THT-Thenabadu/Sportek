@@ -8,15 +8,15 @@ import Button from '../../components/ui/Button';
 import { CalendarDays, Clock, DollarSign, ShieldCheck, Ticket, MapPin } from 'lucide-react';
 
 export function CustomerBookings() {
-
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('confirmed');
+  const [sortBy, setSortBy] = useState('date_newest');
 
   useEffect(() => {
     api.get('/bookings/my-bookings')
       .then(res => {
-        // Guard: ensure res.data is always an array
         setBookings(Array.isArray(res.data) ? res.data : []);
         setLoading(false);
       })
@@ -26,6 +26,58 @@ export function CustomerBookings() {
         setLoading(false);
       });
   }, []);
+
+  const isBookingExpired = (b) => {
+    if (!b.date || !b.timeSlot?.end) return false;
+    if (b.status === 'pending_onsite') return false;
+    const datePart = b.date.split('T')[0];
+    const endDateTimeStr = `${datePart}T${b.timeSlot.end}:00`;
+    const endDateTime = new Date(endDateTimeStr);
+    return endDateTime < new Date();
+  };
+
+  const getFilteredBookings = () => {
+    return bookings.filter(b => {
+      const expired = isBookingExpired(b);
+      if (activeTab === 'expired') return expired;
+      if (expired) return false;
+
+      if (activeTab === 'pending') {
+        return b.status === 'pending' || b.status === 'pending_onsite';
+      }
+      if (activeTab === 'confirmed') {
+        return b.status === 'booked';
+      }
+      return true;
+    });
+  };
+
+  const getSortedBookings = () => {
+    const filtered = getFilteredBookings();
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'date_newest') {
+        return new Date(b.date) - new Date(a.date);
+      }
+      if (sortBy === 'date_oldest') {
+        return new Date(a.date) - new Date(b.date);
+      }
+      if (sortBy === 'status_confirmed') {
+        if (a.status === 'booked' && b.status !== 'booked') return -1;
+        if (a.status !== 'booked' && b.status === 'booked') return 1;
+        return 0;
+      }
+      if (sortBy === 'status_pending') {
+        const aIsPending = a.status === 'pending' || a.status === 'pending_onsite';
+        const bIsPending = b.status === 'pending' || b.status === 'pending_onsite';
+        if (aIsPending && !bIsPending) return -1;
+        if (!aIsPending && bIsPending) return 1;
+        return 0;
+      }
+      return 0;
+    });
+  };
+
+  const sortedBookings = getSortedBookings();
 
   const statusConfig = (status) => {
     const map = {
@@ -54,9 +106,39 @@ export function CustomerBookings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-3xl font-bold text-slate-900">My Bookings</h1>
-        <span className="text-sm text-slate-400">{bookings.length} booking{bookings.length !== 1 ? 's' : ''}</span>
+        
+        {/* Sort Controls */}
+        <div className="flex justify-end">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="date_newest">Date: Newest First</option>
+            <option value="date_oldest">Date: Oldest First</option>
+            <option value="status_confirmed">Status: Confirmed First</option>
+            <option value="status_pending">Status: Pending First</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-200">
+        {['confirmed', 'pending', 'expired'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`py-2 px-4 text-sm font-medium border-b-2 capitalize transition-all ${
+              activeTab === tab
+                ? 'border-primary-600 text-primary-600 font-semibold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab} Bookings
+          </button>
+        ))}
       </div>
 
       {/* Error state */}
@@ -71,21 +153,23 @@ export function CustomerBookings() {
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
-      ) : bookings.length === 0 && !error ? (
+      ) : sortedBookings.length === 0 && !error ? (
         /* Empty state */
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
             <CalendarDays className="w-8 h-8 text-slate-400" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-700 mb-1">No bookings yet</h3>
+          <h3 className="text-lg font-semibold text-slate-700 mb-1">No {activeTab} bookings</h3>
           <p className="text-slate-400 text-sm max-w-xs">
-            Your confirmed bookings will appear here once you complete a payment.
+            {activeTab === 'confirmed' && "Your confirmed bookings will appear here."}
+            {activeTab === 'pending' && "Bookings awaiting payment or confirmation."}
+            {activeTab === 'expired' && "Past bookings."}
           </p>
         </div>
       ) : (
         /* Bookings grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {bookings.map(b => {
+          {sortedBookings.map(b => {
             const cfg = statusConfig(b.status);
             return (
               <Card key={b._id} className="overflow-hidden hover:shadow-md transition-shadow">

@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 import {
   Home, Calendar, LayoutDashboard, Settings,
   UserPlus, Users, ScanLine, LogOut, Ticket, AlertCircle,
-  Star, MessageSquare
+  Star, MessageSquare, FileText, ClipboardCheck
 } from 'lucide-react';
 
 function Sidebar() {
@@ -53,7 +53,11 @@ function Sidebar() {
     if (role === 'securityOfficer') {
       return [
         { name: 'Scan QR Code', path: '/dashboard/scan', icon: ScanLine },
-        { name: 'My Tickets',   path: '/dashboard/tickets', icon: Ticket   },
+        { name: 'Availability', path: '/dashboard/availability', icon: Calendar },
+        { name: 'Upcoming Bookings', path: '/dashboard/upcoming', icon: FileText },
+        { name: 'Current Bookings', path: '/dashboard/current', icon: ClipboardCheck },
+        { name: 'Entry Log', path: '/dashboard/entry-log', icon: FileText },
+        { name: 'Daily Report', path: '/dashboard/report', icon: AlertCircle },
       ];
     }
 

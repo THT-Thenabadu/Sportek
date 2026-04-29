@@ -21,7 +21,7 @@ import BookingFlow from './pages/BookingFlow';
 import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, CustomerComplaints } from './pages/dashboards/CustomerDashboard';
 import { OwnerProperties, OwnerAssets, OwnerWarnings } from './pages/dashboards/OwnerDashboard';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
-import SecurityScanner from './pages/dashboards/SecurityDashboard';
+import SecurityDashboard from './pages/dashboards/SecurityDashboard';
 
 function ProtectedRoute({ children, role }) {
   const { user } = useAuthStore();
@@ -96,7 +96,12 @@ function App() {
             <Route path="admin/events" element={<ProtectedRoute role="admin"><AdminEvents /></ProtectedRoute>} />
 
             {/* Security Routes */}
-            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityScanner /></ProtectedRoute>} />
+            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="scanner" /></ProtectedRoute>} />
+            <Route path="availability" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="availability" /></ProtectedRoute>} />
+            <Route path="upcoming" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="upcoming" /></ProtectedRoute>} />
+            <Route path="current" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="current" /></ProtectedRoute>} />
+            <Route path="entry-log" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="entry-log" /></ProtectedRoute>} />
+            <Route path="report" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="report" /></ProtectedRoute>} />
           </Route>
         </Route>
         

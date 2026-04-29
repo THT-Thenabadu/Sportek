@@ -6,9 +6,13 @@ const {
   getPropertyById, 
   updateProperty, 
   deleteProperty, 
-  deactivateProperty 
+  deactivateProperty,
+  getPropertyAvailability
 } = require('../controllers/propertyController');
 const { protect, authorize } = require('../middleware/auth');
+
+router.route('/owner/:ownerId/availability')
+  .get(protect, getPropertyAvailability);
 
 router.route('/')
   .get(getProperties)

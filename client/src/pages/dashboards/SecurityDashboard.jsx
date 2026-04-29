@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode';
 import api from '../../lib/axios';
+import useAuthStore from '../../store/useAuthStore';
 import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import { CheckCircle, XCircle, User, Calendar, Clock, MapPin, Loader2, QrCode, FileText, Send } from 'lucide-react';
+import { CheckCircle, XCircle, User, Calendar, Clock, MapPin, Loader2, QrCode, FileText, Send, Search, Ticket, ClipboardCheck, AlertCircle } from 'lucide-react';
 
 function SecurityScanner() {
   const [loadingBooking, setLoadingBooking] = useState(false);
@@ -15,6 +17,15 @@ function SecurityScanner() {
     try {
       const res = await api.get(`/bookings/verify-passkey/${passkeyInput.toUpperCase()}`);
       setPasskeyResult({ success: true, booking: res.data });
+      setBookingDetails(res.data);
+      
+      try {
+        await api.patch(`/bookings/${res.data._id}/attendance`, { status: 'confirmed' });
+        setBookingDetails({ ...res.data, attendanceStatus: 'confirmed' });
+        setPasskeyResult({ success: true, booking: { ...res.data, attendanceStatus: 'confirmed' } });
+      } catch (err) {
+        console.error('Auto attendance update failed:', err);
+      }
     } catch (err) {
       setPasskeyResult({ success: false, message: err.response?.data?.message || 'Invalid passkey' });
     }
@@ -35,6 +46,13 @@ function SecurityScanner() {
       } catch (e) { }
       const res = await api.get(`/bookings/${bookingId}`);
       setBookingDetails(res.data);
+      
+      try {
+        await api.patch(`/bookings/${bookingId}/attendance`, { status: 'confirmed' });
+        setBookingDetails({ ...res.data, attendanceStatus: 'confirmed' });
+      } catch (err) {
+        console.error('Auto attendance scan update failed:', err);
+      }
     } catch (err) {
       setErrorMsg(err.response?.data?.message || 'Invalid or unknown booking QR code');
       if (scannerRef.current) scannerRef.current.resume();
@@ -90,6 +108,14 @@ function SecurityScanner() {
     } catch (err) {
       alert('Error updating attendance: ' + (err.response?.data?.message || err.message));
     }
+  };
+
+  const isBookingExpired = () => {
+    if (!bookingDetails?.date || !bookingDetails?.timeSlot?.end) return false;
+    const datePart = bookingDetails.date.split('T')[0];
+    const endDateTimeStr = `${datePart}T${bookingDetails.timeSlot.end}:00`;
+    const endDateTime = new Date(endDateTimeStr);
+    return endDateTime < new Date();
   };
 
   const handleScanAnother = () => {
@@ -272,29 +298,41 @@ function SecurityScanner() {
                   </div>
                 )}
               </div>
-              <div className="p-5 border-t space-y-3 bg-slate-50 rounded-b-xl">
-                <div className="flex gap-3">
-                  <Button
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={() => updateAttendance('confirmed')}
-                    disabled={bookingDetails.attendanceStatus === 'confirmed' || bookingDetails.status === 'cancelled'}
-                  >
-                    Mark Present
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    variant="danger"
-                    onClick={() => updateAttendance('noShow')}
-                    disabled={bookingDetails.attendanceStatus === 'noShow' || bookingDetails.status === 'cancelled'}
-                  >
-                    No Show
+              {isBookingExpired() ? (
+                <div className="p-5 border-t space-y-3 bg-slate-50 rounded-b-xl">
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm font-medium text-center">
+                    This booking has expired. The time slot for this booking has already passed.
+                  </div>
+                  <Button className="w-full" variant="outline" onClick={handleScanAnother}>
+                    <QrCode className="w-4 h-4 mr-2" />
+                    Scan Another
                   </Button>
                 </div>
-                <Button className="w-full" variant="outline" onClick={handleScanAnother}>
-                  <QrCode className="w-4 h-4 mr-2" />
-                  Scan Next Customer
-                </Button>
-              </div>
+              ) : (
+                <div className="p-5 border-t space-y-3 bg-slate-50 rounded-b-xl">
+                  <div className="flex gap-3">
+                    <Button
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={() => updateAttendance('confirmed')}
+                      disabled={bookingDetails.attendanceStatus === 'confirmed' || bookingDetails.status === 'cancelled'}
+                    >
+                      Mark Present
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      variant="danger"
+                      onClick={() => updateAttendance('noShow')}
+                      disabled={bookingDetails.attendanceStatus === 'noShow' || bookingDetails.status === 'cancelled'}
+                    >
+                      No Show
+                    </Button>
+                  </div>
+                  <Button className="w-full" variant="outline" onClick={handleScanAnother}>
+                    <QrCode className="w-4 h-4 mr-2" />
+                    Scan Next Customer
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -559,11 +597,805 @@ function DailyReport() {
   );
 }
 
-export default function SecurityDashboard() {
+function SecurityAvailability() {
+  const { user } = useAuthStore();
+  const [properties, setProperties] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('name_az');
+
+  useEffect(() => {
+    const ownerId = user?.associatedOwner || user?._id;
+    console.log('SecurityAvailability useEffect called. User:', user);
+    console.log('Calling Availability API URL:', `/properties/owner/${ownerId}/availability`);
+
+    if (ownerId) {
+      api.get(`/properties/owner/${ownerId}/availability`)
+        .then(res => {
+          setProperties(Array.isArray(res.data) ? res.data : []);
+          setLoading(false);
+        })
+        .catch(err => {
+          setError(err.response?.data?.message || 'Could not load availability data.');
+          setLoading(false);
+        });
+    } else {
+      setError('No associated property owner found for this officer.');
+      setLoading(false);
+    }
+  }, [user]);
+
+  const getFilteredAndSorted = () => {
+    let result = properties.filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    if (filterStatus === 'available') {
+      result = result.filter(p => p.isAvailable);
+    } else if (filterStatus === 'not_available') {
+      result = result.filter(p => !p.isAvailable);
+    }
+
+    return result.sort((a, b) => {
+      if (sortBy === 'name_az') return a.name.localeCompare(b.name);
+      if (sortBy === 'name_za') return b.name.localeCompare(a.name);
+      return 0;
+    });
+  };
+
+  const processedProperties = getFilteredAndSorted();
+
   return (
-    <div>
-      <SecurityScanner />
-      <DailyReport />
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h2 className="text-2xl font-bold text-slate-900">Facility Availability</h2>
+        
+        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <input
+              type="text"
+              placeholder="Search by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          </div>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="all">All</option>
+            <option value="available">Available</option>
+            <option value="not_available">Not Available</option>
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="name_az">Sort by Name A-Z</option>
+            <option value="name_za">Sort by Name Z-A</option>
+          </select>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : processedProperties.length === 0 ? (
+        <p className="text-center text-slate-500 py-12 bg-slate-50 border rounded-xl text-sm">
+          No facilities found.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {processedProperties.map(p => (
+            <Card key={p._id} className="hover:shadow-md transition-shadow overflow-hidden bg-white">
+              <CardHeader className="flex flex-row items-center justify-between bg-slate-50 border-b pb-3">
+                <CardTitle className="text-base font-bold text-slate-900 truncate">
+                  {p.name}
+                </CardTitle>
+                <Badge
+                  variant={p.isAvailable ? 'success' : 'destructive'}
+                  className="shrink-0"
+                >
+                  {p.isAvailable ? 'Available' : 'Not Available'}
+                </Badge>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-2 text-sm">
+                <p className="text-slate-600 flex items-center gap-2">
+                  <span className="font-semibold text-slate-800">Sport Type:</span> {p.sportType}
+                </p>
+                <p className="text-slate-600 flex items-center gap-2">
+                  <span className="font-semibold text-slate-800">Location:</span> {p.location?.address || '—'}
+                </p>
+                <p className="text-slate-600 flex items-center gap-2">
+                  <span className="font-semibold text-slate-800">Available Hours:</span> {p.availableHours?.start} – {p.availableHours?.end}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UpcomingBookings() {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [sortBy, setSortBy] = useState('date_newest');
+  
+  const [selectedQR, setSelectedQR] = useState(null);
+
+  useEffect(() => {
+    api.get('/bookings/upcoming-security')
+      .then(res => {
+        setBookings(Array.isArray(res.data) ? res.data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.message || 'Could not load upcoming bookings.');
+        setLoading(false);
+      });
+  }, []);
+
+  const getFilteredAndSorted = () => {
+    let result = bookings.filter(b => {
+      const customerName = b.customerId?.name || '';
+      const propertyName = b.propertyId?.name || '';
+      const matchesSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            propertyName.toLowerCase().includes(searchQuery.toLowerCase());
+
+      let matchesDate = true;
+      if (b.date) {
+        const bookingDate = new Date(b.date);
+        bookingDate.setHours(0, 0, 0, 0);
+
+        if (fromDate) {
+          const from = new Date(fromDate);
+          from.setHours(0, 0, 0, 0);
+          if (bookingDate < from) matchesDate = false;
+        }
+        if (toDate) {
+          const to = new Date(toDate);
+          to.setHours(0, 0, 0, 0);
+          if (bookingDate > to) matchesDate = false;
+        }
+      }
+
+      return matchesSearch && matchesDate;
+    });
+
+    return result.sort((a, b) => {
+      if (sortBy === 'date_newest') return new Date(b.date) - new Date(a.date);
+      if (sortBy === 'date_oldest') return new Date(a.date) - new Date(b.date);
+      return 0;
+    });
+  };
+
+  const processedBookings = getFilteredAndSorted();
+
+  const renderQRModal = () => {
+    if (!selectedQR) return null;
+    const encoded = encodeURIComponent(selectedQR);
+    return (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 flex flex-col items-center">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Manual Verification QR</h3>
+          <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encoded}`}
+              alt="Manual Verification"
+              width={200}
+              height={200}
+            />
+          </div>
+          <Button variant="outline" onClick={() => setSelectedQR(null)}>Close</Button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {renderQRModal()}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h2 className="text-2xl font-bold text-slate-900">Upcoming Bookings</h2>
+        
+        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <input
+              type="text"
+              placeholder="Search by customer/facility..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">From:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">To:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="date_newest">Date: Newest First</option>
+            <option value="date_oldest">Date: Oldest First</option>
+          </select>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : processedBookings.length === 0 ? (
+        <p className="text-center text-slate-500 py-12 bg-slate-50 border rounded-xl text-sm">
+          No upcoming bookings match criteria.
+        </p>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b text-slate-700 font-semibold">
+              <tr>
+                {['Customer Name', 'Property Name', 'Date', 'Time Slot', 'Payment Method', 'Total Amount', 'Booking Status', 'Attendance Status', 'Actions'].map(h => (
+                  <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {processedBookings.map(b => (
+                <tr key={b._id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900">{b.customerId?.name || 'Unknown'}</td>
+                  <td className="px-4 py-3 text-slate-600">{b.propertyId?.name || 'Unknown Facility'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{b.date ? new Date(b.date).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{b.timeSlot?.start} – {b.timeSlot?.end}</td>
+                  <td className="px-4 py-3 capitalize text-slate-500">{b.paymentMethod}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">${b.totalAmount?.toFixed(2)}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant={b.status === 'booked' ? 'success' : 'warning'}>{b.status}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="warning">{b.attendanceStatus}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedQR(b.qrCodeData || b._id)}
+                    >
+                      View QR
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CurrentBookings() {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [sortBy, setSortBy] = useState('date_newest');
+
+  useEffect(() => {
+    api.get('/bookings/current-security')
+      .then(res => {
+        setBookings(Array.isArray(res.data) ? res.data : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.message || 'Could not load current bookings.');
+        setLoading(false);
+      });
+  }, []);
+
+  const getFilteredAndSorted = () => {
+    let result = bookings.filter(b => {
+      const customerName = b.customerId?.name || '';
+      const propertyName = b.propertyId?.name || '';
+      const matchesSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            propertyName.toLowerCase().includes(searchQuery.toLowerCase());
+
+      let matchesDate = true;
+      if (b.date) {
+        const bookingDate = new Date(b.date);
+        bookingDate.setHours(0, 0, 0, 0);
+
+        if (fromDate) {
+          const from = new Date(fromDate);
+          from.setHours(0, 0, 0, 0);
+          if (bookingDate < from) matchesDate = false;
+        }
+        if (toDate) {
+          const to = new Date(toDate);
+          to.setHours(0, 0, 0, 0);
+          if (bookingDate > to) matchesDate = false;
+        }
+      }
+
+      return matchesSearch && matchesDate;
+    });
+
+    return result.sort((a, b) => {
+      if (sortBy === 'date_newest') return new Date(b.date) - new Date(a.date);
+      if (sortBy === 'date_oldest') return new Date(a.date) - new Date(b.date);
+      return 0;
+    });
+  };
+
+  const processedBookings = getFilteredAndSorted();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h2 className="text-2xl font-bold text-slate-900">Current Bookings</h2>
+        
+        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <input
+              type="text"
+              placeholder="Search by customer/facility..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">From:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">To:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+          >
+            <option value="date_newest">Date: Newest First</option>
+            <option value="date_oldest">Date: Oldest First</option>
+          </select>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : processedBookings.length === 0 ? (
+        <p className="text-center text-slate-500 py-12 bg-slate-50 border rounded-xl text-sm">
+          No processed bookings match criteria.
+        </p>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b text-slate-700 font-semibold">
+              <tr>
+                {['Customer Name', 'Property Name', 'Date', 'Time Slot', 'Payment Method', 'Total Amount', 'Attendance Status'].map(h => (
+                  <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {processedBookings.map(b => (
+                <tr key={b._id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900">{b.customerId?.name || 'Unknown'}</td>
+                  <td className="px-4 py-3 text-slate-600">{b.propertyId?.name || 'Unknown Facility'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{b.date ? new Date(b.date).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{b.timeSlot?.start} – {b.timeSlot?.end}</td>
+                  <td className="px-4 py-3 capitalize text-slate-500">{b.paymentMethod}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">${b.totalAmount?.toFixed(2)}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant={b.attendanceStatus === 'confirmed' ? 'success' : 'destructive'}>
+                      {b.attendanceStatus}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntryLog() {
+  const { user } = useAuthStore();
+  const [properties, setProperties] = useState([]);
+  const [log, setLog] = useState([]);
+  const [visitorName, setVisitorName] = useState('');
+  const [visitorType, setVisitorType] = useState('Member');
+  const [facility, setFacility] = useState('');
+  const [formEntryTime, setFormEntryTime] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Filter States
+  const [filterSearch, setFilterSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [filterType, setFilterType] = useState('All');
+  const [sortOrder, setSortOrder] = useState('newest');
+
+  useEffect(() => {
+    const ownerId = user?.associatedOwner || user?._id;
+    if (ownerId) {
+      setLoading(true);
+      api.get(`/properties/owner/${ownerId}/availability`)
+        .then(res => {
+          const data = Array.isArray(res.data) ? res.data : [];
+          setProperties(data);
+          if (data.length > 0) {
+            setFacility(data[0].name);
+          }
+          setLoading(false);
+        })
+        .catch(err => {
+          setError('Could not load properties.');
+          setLoading(false);
+        });
+    }
+  }, [user]);
+
+  const handleAddVisitor = (e) => {
+    e.preventDefault();
+    if (!visitorName.trim()) return;
+    
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    setFormEntryTime(timeStr);
+    
+    const newEntry = {
+      id: Date.now(),
+      name: visitorName,
+      type: visitorType,
+      facility: facility,
+      entryTime: timeStr,
+      exitTime: null,
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    setLog(prev => [newEntry, ...prev]);
+    setVisitorName('');
+  };
+
+  const handleLogExit = (id) => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    setLog(prev => prev.map(item => item.id === id ? { ...item, exitTime: timeStr } : item));
+  };
+
+  const clearLog = () => {
+    setLog([]);
+  };
+
+  const getBadgeVariant = (type) => {
+    if (type === 'Member') return 'default';
+    if (type === 'Visitor') return 'success';
+    if (type === 'Service') return 'danger';
+    return 'outline';
+  };
+
+  const getFilteredAndSortedLog = () => {
+    let result = [...log];
+    
+    if (filterSearch.trim()) {
+      const q = filterSearch.toLowerCase();
+      result = result.filter(item => 
+        item.name.toLowerCase().includes(q) || 
+        item.facility.toLowerCase().includes(q)
+      );
+    }
+    
+    if (fromDate) {
+      result = result.filter(item => item.date >= fromDate);
+    }
+    if (toDate) {
+      result = result.filter(item => item.date <= toDate);
+    }
+    
+    if (filterType !== 'All') {
+      result = result.filter(item => item.type === filterType);
+    }
+    
+    result.sort((a, b) => {
+      if (sortOrder === 'newest') {
+        return b.id - a.id;
+      } else {
+        return a.id - b.id;
+      }
+    });
+    
+    return result;
+  };
+
+  const filteredLog = getFilteredAndSortedLog();
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="p-3 bg-primary-100 rounded-lg">
+          <FileText className="w-8 h-8 text-primary-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Entry Log</h1>
+          <p className="text-slate-500">Track and log physical visitor accesses safely.</p>
+        </div>
+      </div>
+
+      {/* Filter and Search Controls */}
+      <Card className="shadow-md bg-slate-50/50 border border-slate-200">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Search</label>
+            <input
+              type="text"
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              placeholder="Name or facility..."
+              className="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">From Date</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-4 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">To Date</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-4 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Type</label>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm"
+            >
+              <option value="All">All</option>
+              <option value="Member">Member</option>
+              <option value="Visitor">Visitor</option>
+              <option value="Service">Service</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Sort By</label>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm"
+            >
+              <option value="newest">Entry Time: Newest First</option>
+              <option value="oldest">Entry Time: Oldest First</option>
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Add Visitor Form */}
+      <Card className="shadow-md">
+        <CardHeader className="bg-slate-50 border-b">
+          <CardTitle className="text-lg">Add Visitor</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleAddVisitor}>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Visitor Name</label>
+                <input
+                  type="text"
+                  value={visitorName}
+                  onChange={(e) => setVisitorName(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm transition-all"
+                  placeholder="Full Name"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Type</label>
+                <select
+                  value={visitorType}
+                  onChange={(e) => setVisitorType(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm transition-all"
+                >
+                  <option value="Member">Member</option>
+                  <option value="Visitor">Visitor</option>
+                  <option value="Service">Service</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Facility</label>
+                <select
+                  value={facility}
+                  onChange={(e) => setFacility(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white shadow-sm transition-all"
+                >
+                  {properties.map(p => (
+                    <option key={p._id} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Entry Time</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={formEntryTime}
+                  placeholder="Auto-populated"
+                  className="w-full border border-slate-200 bg-slate-50 text-slate-500 rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono shadow-sm cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button type="submit" disabled={loading || properties.length === 0}>
+                + Add Visitor
+              </Button>
+            </div>
+          </form>
+          {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
+        </CardContent>
+      </Card>
+
+      {/* Visitor Records Table */}
+      <Card className="shadow-md">
+        <CardHeader className="flex flex-row justify-between items-center bg-slate-50 border-b">
+          <CardTitle className="text-lg">Visitor Entry Records</CardTitle>
+          {filteredLog.length > 0 && (
+            <Button variant="outline" size="sm" onClick={clearLog} className="text-red-600 border-red-200 hover:bg-red-50">
+              Clear Log
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          {filteredLog.length === 0 ? (
+            <p className="text-center text-slate-500 py-12 bg-slate-50/50 text-sm">No visitors found matching filters.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-slate-700 border-b font-semibold">
+                  <tr>
+                    {['Name', 'Type', 'Facility', 'Entry Time', 'Exit Time'].map(h => (
+                      <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filteredLog.map(item => (
+                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{item.name}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={getBadgeVariant(item.type)}>{item.type}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{item.facility}</td>
+                      <td className="px-4 py-3 font-mono text-slate-700">{item.entryTime}</td>
+                      <td className="px-4 py-3">
+                        {item.exitTime ? (
+                          <span className="font-mono text-slate-500">{item.exitTime}</span>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => handleLogExit(item.id)} className="py-1 h-auto text-xs border-slate-300 text-slate-700 hover:bg-slate-50">
+                            Log Exit
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function SecurityDashboard({ defaultTab = 'scanner' }) {
+  const [activeTab, setActiveTab] = useState(defaultTab);
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
+
+  return (
+    <div className="space-y-6">
+      {activeTab === 'scanner' && <SecurityScanner />}
+      {activeTab === 'availability' && <SecurityAvailability />}
+      {activeTab === 'upcoming' && <UpcomingBookings />}
+      {activeTab === 'current' && <CurrentBookings />}
+      {activeTab === 'entry-log' && <EntryLog />}
+      {activeTab === 'report' && <DailyReport />}
     </div>
   );
 }

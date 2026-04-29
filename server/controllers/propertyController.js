@@ -121,11 +121,58 @@ const deactivateProperty = async (req, res) => {
   }
 };
 
+// @desc    Get properties with availability status
+// @route   GET /api/properties/owner/:ownerId/availability
+// @access  Private
+const getPropertyAvailability = async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+    const properties = await Property.find({ ownerId });
+
+    const Booking = require('../models/Booking');
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const currentHour = String(now.getHours()).padStart(2, '0');
+    const currentMin = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeStr = `${currentHour}:${currentMin}`;
+
+    const propertyIds = properties.map(p => p._id);
+    const startOfToday = new Date(todayStr);
+    const endOfToday = new Date(todayStr);
+    endOfToday.setDate(endOfToday.getDate() + 1);
+
+    const bookings = await Booking.find({
+      propertyId: { $in: propertyIds },
+      status: 'booked',
+      date: { $gte: startOfToday, $lt: endOfToday }
+    });
+
+    const propertiesWithAvailability = properties.map(p => {
+      const propertyBookings = bookings.filter(b => b.propertyId.toString() === p._id.toString());
+      
+      const isOccupied = propertyBookings.some(b => {
+        return b.timeSlot.start <= currentTimeStr && b.timeSlot.end > currentTimeStr;
+      });
+
+      return {
+        ...p.toObject(),
+        isAvailable: !isOccupied
+      };
+    });
+
+    res.json(propertiesWithAvailability);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createProperty,
   getProperties,
   getPropertyById,
   updateProperty,
   deleteProperty,
-  deactivateProperty
+  deactivateProperty,
+  getPropertyAvailability
 };

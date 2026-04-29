@@ -1,9 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { getAvailableSlots, createPaymentIntent, stripeWebhook, getMyBookings, getPropertyBookings, markAttendance, getBookingById } = require('../controllers/bookingController');
+const { 
+  getAvailableSlots, 
+  createPaymentIntent, 
+  stripeWebhook, 
+  getMyBookings, 
+  getPropertyBookings, 
+  markAttendance, 
+  getBookingById,
+  getUpcomingSecurityBookings,
+  getCurrentSecurityBookings
+} = require('../controllers/bookingController');
 const { protect, authorize } = require('../middleware/auth');
 const Booking = require('../models/Booking');
 const Property = require('../models/Property');
+
+router.route('/upcoming-security').get(protect, authorize('securityOfficer'), getUpcomingSecurityBookings);
+router.route('/current-security').get(protect, authorize('securityOfficer'), getCurrentSecurityBookings);
 
 // Public endpoint to check slots
 router.route('/slots/:propertyId').get(getAvailableSlots);

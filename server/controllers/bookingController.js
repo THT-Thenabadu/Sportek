@@ -338,6 +338,53 @@ const stripeWebhook = async (req, res) => {
   res.json({ received: true });
 };
 
+const getUpcomingSecurityBookings = async (req, res) => {
+  try {
+    if (req.user.role !== 'securityOfficer') {
+      return res.status(403).json({ message: 'Access denied. Security officers only.' });
+    }
+    if (!req.user.associatedOwner) {
+      return res.status(400).json({ message: 'No associated property owner linked to your account.' });
+    }
+    const Property = require('../models/Property');
+    const properties = await Property.find({ ownerId: req.user.associatedOwner });
+    const propertyIds = properties.map(p => p._id);
+
+    const bookings = await Booking.find({
+      propertyId: { $in: propertyIds },
+      status: 'booked',
+      attendanceStatus: 'pending'
+    }).populate('customerId', 'name email').populate('propertyId', 'name');
+
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getCurrentSecurityBookings = async (req, res) => {
+  try {
+    if (req.user.role !== 'securityOfficer') {
+      return res.status(403).json({ message: 'Access denied. Security officers only.' });
+    }
+    if (!req.user.associatedOwner) {
+      return res.status(400).json({ message: 'No associated property owner linked to your account.' });
+    }
+    const Property = require('../models/Property');
+    const properties = await Property.find({ ownerId: req.user.associatedOwner });
+    const propertyIds = properties.map(p => p._id);
+
+    const bookings = await Booking.find({
+      propertyId: { $in: propertyIds },
+      attendanceStatus: { $in: ['confirmed', 'noShow'] }
+    }).populate('customerId', 'name email').populate('propertyId', 'name');
+
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 const getMyBookings = async (req, res) => {
   try {
     const bookings = await Booking.find({ customerId: req.user._id }).populate('propertyId');
@@ -405,5 +452,7 @@ module.exports = {
   getMyBookings,
   getPropertyBookings,
   markAttendance,
-  getBookingById
+  getBookingById,
+  getUpcomingSecurityBookings,
+  getCurrentSecurityBookings
 };
