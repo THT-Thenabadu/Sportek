@@ -15,7 +15,6 @@ import Register from './pages/Register';
 import Events from './pages/Events';
 import EventHub from './pages/EventHub';
 import EventDetails from './pages/EventDetails';
-import EventBooking from './pages/EventBooking';
 import EventSeatSelection from './pages/EventSeatSelection';
 import EventPayment from './pages/EventPayment';
 import Venues from './pages/Venues';
@@ -77,9 +76,8 @@ function App() {
           <Route path="/venues" element={<Venues />} />
           <Route path="/events" element={<EventHub />} />
           <Route path="/events/:id" element={<EventDetails />} />
-        <Route path="/events/:id/book/:catIndex" element={<EventBooking />} />
-        <Route path="/events/:id/seats" element={<EventSeatSelection />} />
-        <Route path="/events/:id/payment" element={<EventPayment />} />
+          <Route path="/events/:id/seats" element={<EventSeatSelection />} />
+          <Route path="/events/:id/payment" element={<EventPayment />} />
           <Route path="/facilities/:id" element={<FacilityDetails />} />
           <Route path="/facilities/:id/book" element={
             <ProtectedRoute>
