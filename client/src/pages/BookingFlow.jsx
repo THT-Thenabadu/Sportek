@@ -11,6 +11,9 @@ import Button from '../components/ui/Button';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
+// Hold duration in seconds (5 minutes)
+const HOLD_DURATION_SECS = 5 * 60;
+
 // ─── Stripe Payment Form ────────────────────────────────────────────────
 function CheckoutForm({ clientSecret, bookingId, onSuccess, onError }) {
   const stripe = useStripe();
@@ -68,6 +71,7 @@ function BookingFlowInner() {
   const [timeLeft, setTimeLeft] = useState(null);            // seconds remaining
   const [lockedByMe, setLockedByMe] = useState(false);
   const [socket, setSocket] = useState(null);
+  const [holdExpired, setHoldExpired] = useState(false);     // "Time expired" message flag
 
   // Payment state
   const [clientSecret, setClientSecret] = useState('');
@@ -84,6 +88,7 @@ function BookingFlowInner() {
   const [tick, setTick] = useState(0);
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+  const [isProceeding, setIsProceeding] = useState(false);
 
   // ── Fetch property info ──
   useEffect(() => {
@@ -93,15 +98,32 @@ function BookingFlowInner() {
   // ── Fetch available slots ──
   const fetchSlots = useCallback(() => {
     setLoadingSlots(true);
-    api.get(`/bookings/slots/${propertyId}`, { params: { date: selectedDate } })
-      .then(r => {
-        // API returns { date, propertyId, slots: [...] }
-        const fetchedSlots = r.data.slots ?? r.data;
-        setSlots(fetchedSlots);
+    const params = { date: selectedDate };
+    if (user && user._id) params.userId = user._id;
 
-        // Rebuild slotLockInfo from any already-pending slots so page-load shows countdowns
+    api.get(`/bookings/slots/${propertyId}`, { params })
+      .then(r => {
+        const fetchedSlots = r.data.slots ?? r.data;
+        
+        // Filter out past slots if the selected date is today
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        let filteredSlots = fetchedSlots;
+        
+        if (selectedDate === todayStr) {
+          const currentHour = now.getHours();
+          const currentMin = now.getMinutes();
+          filteredSlots = fetchedSlots.filter(sl => {
+            const [h, m] = sl.start.split(':').map(Number);
+            return h > currentHour || (h === currentHour && m > currentMin);
+          });
+        }
+
+        setSlots(filteredSlots);
+
+        // Rebuild slotLockInfo from any already-pending slots
         const lockMap = {};
-        fetchedSlots.forEach(sl => {
+        filteredSlots.forEach(sl => {
           if (sl.state === 'Pending' && sl.lockExpiresAt) {
             lockMap[sl.start] = sl.lockExpiresAt;
           }
@@ -125,7 +147,7 @@ function BookingFlowInner() {
 
   // ── Socket.io ──
   useEffect(() => {
-    const s = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000');
+    const s = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:8000');
     setSocket(s);
 
     // Join the property room so we receive real-time updates
@@ -157,17 +179,21 @@ function BookingFlowInner() {
       setSlotLockInfo(prev => { const n = { ...prev }; delete n[timeSlotStart]; return n; });
     });
 
-    // Server confirms OUR lock succeeded — start the personal checkout timer
-    s.on('lock_success', ({ expiresAt }) => {
+    // Server confirms OUR lock succeeded — start the personal checkout timer (5 minutes)
+    s.on('lock_success', ({ expiresAt, bookingId: heldBookingId }) => {
       const secsLeft = Math.round((new Date(expiresAt) - Date.now()) / 1000);
       setTimeLeft(secsLeft);
       setLockedByMe(true);
+      setHoldExpired(false);
+      setIsProceeding(false);
+      if (heldBookingId) setBookingId(heldBookingId);
     });
 
     // Server tells us our lock was rejected (slot already taken by someone else)
     s.on('lock_error', ({ message }) => {
       alert(message);
       setSelectedSlot(null);
+      setIsProceeding(false);
       fetchSlots(); // re-fetch from server to get accurate state
     });
 
@@ -181,11 +207,12 @@ function BookingFlowInner() {
   useEffect(() => {
     if (!lockedByMe || timeLeft === null) return;
     if (timeLeft <= 0) {
+      // Timer expired — clear user's local selection and show "Time expired"
       setLockedByMe(false);
       setSelectedSlot(null);
       setClientSecret('');
       setBookingId('');
-      alert('Your 120-second slot hold has expired. Please select a slot again.');
+      setHoldExpired(true);
       fetchSlots();
       return;
     }
@@ -193,24 +220,82 @@ function BookingFlowInner() {
     return () => clearTimeout(t);
   }, [lockedByMe, timeLeft, fetchSlots]);
 
-  // ── Select & lock a slot ──
+  // ── Select a slot ──
   const handleSelectSlot = (slot) => {
     if (slot.state !== 'Available') return;
-    if (!socket || !user) return;
+    if (!user) {
+      alert('Please log in to book a slot.');
+      navigate('/login');
+      return;
+    }
+    if (!socket) return;
 
-    // Emit correct event name that server listens for: 'lock_slot'
+    // Clear any previous expired state
+    setHoldExpired(false);
+    setIsProceeding(false);
+
+    // Just select locally first, don't lock yet
+    setSelectedSlot(slot);
+  };
+
+  // ── Lock the slot when proceeding to payment ──
+  const handleProceedToPayment = () => {
+    if (!user) {
+      alert('Please log in to proceed.');
+      navigate('/login');
+      return;
+    }
+    if (!selectedSlot || !socket) return;
+
+    setIsProceeding(true);
     socket.emit('lock_slot', {
       propertyId,
       date: selectedDate,
-      timeSlotStart: slot.start,
+      timeSlotStart: selectedSlot.start,
       userId: user._id
     });
-    setSelectedSlot(slot);
+  };
+
+  // ── Cancel held slot (explicit user action) ──
+  const handleCancelHold = async () => {
+    if (!selectedSlot) return;
+
+    // Cancel via API (releases DB hold + in-memory lock)
+    try {
+      await api.post('/bookings/cancel-hold', {
+        propertyId,
+        date: selectedDate,
+        timeSlotStart: selectedSlot.start
+      });
+    } catch (err) {
+      console.error('Cancel hold error:', err);
+    }
+
+    // Also emit socket event for immediate UI update
+    if (socket && user) {
+      socket.emit('release_slot', {
+        propertyId,
+        date: selectedDate,
+        timeSlotStart: selectedSlot.start,
+        userId: user._id
+      });
+    }
+
+    // Reset local state
+    setLockedByMe(false);
+    setSelectedSlot(null);
+    setClientSecret('');
+    setBookingId('');
+    setTimeLeft(null);
+    setIntentError('');
+    fetchSlots();
   };
 
   // ── Create PaymentIntent once slot is locked ──
   useEffect(() => {
     if (!lockedByMe || !selectedSlot) return;
+    // Skip if we already have a client secret
+    if (clientSecret) return;
     setCreatingIntent(true);
     setIntentError('');
     api.post('/bookings/create-payment-intent', {
@@ -228,7 +313,7 @@ function BookingFlowInner() {
         setIntentError(err.response?.data?.message || 'Could not initiate payment. Please try again.');
         setCreatingIntent(false);
       });
-  }, [lockedByMe, selectedSlot, propertyId, selectedDate]);
+  }, [lockedByMe, selectedSlot, propertyId, selectedDate, clientSecret]);
 
   // ── Payment success ──
   const handlePaySuccess = () => {
@@ -260,7 +345,7 @@ function BookingFlowInner() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const timerColor = timeLeft !== null && timeLeft <= 30
+  const timerColor = timeLeft !== null && timeLeft <= 60
     ? 'text-red-500 animate-pulse'
     : 'text-amber-500';
 
@@ -302,6 +387,29 @@ function BookingFlowInner() {
         )}
       </div>
 
+      {/* Hold Expired Banner */}
+      {holdExpired && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <p className="font-semibold text-red-800">Time Expired</p>
+            <p className="text-sm text-red-600">Your 5-minute hold has expired. The slot has been released back to availability. Please select a new slot.</p>
+          </div>
+          <button
+            onClick={() => setHoldExpired(false)}
+            className="ml-auto text-red-400 hover:text-red-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* ── Slot Picker ── */}
         <Card>
@@ -316,7 +424,7 @@ function BookingFlowInner() {
             <div className="mb-5">
               <p className="text-sm font-medium text-slate-700 mb-3">Select Date</p>
               <div className="grid grid-cols-4 gap-2">
-                {Array.from({ length: 4 }, (_, i) => {
+                {Array.from({ length: user?.institute && property?.institute && user.institute.toLowerCase() === property.institute.toLowerCase() ? 7 : 4 }, (_, i) => {
                   const date = new Date();
                   date.setDate(date.getDate() + i);
                   const dateStr = date.toISOString().split('T')[0];
@@ -334,6 +442,7 @@ function BookingFlowInner() {
                         setBookingId('');
                         setLockedByMe(false);
                         setTimeLeft(null);
+                        setHoldExpired(false);
                       }}
                       className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
                         isSelected
@@ -410,7 +519,7 @@ function BookingFlowInner() {
                 )}
               </div>
               {lockedByMe && (
-                <p className="text-xs text-primary-600 mt-1">Slot reserved for you. Complete payment before time runs out.</p>
+                <p className="text-xs text-primary-600 mt-1">Slot held for you — complete payment within 5 minutes.</p>
               )}
               {lockedByMe && (
                 <div className="flex gap-3 p-1 bg-slate-100 rounded-lg mt-4">
@@ -459,11 +568,17 @@ function BookingFlowInner() {
                 <span className="text-primary-600">${property?.pricePerHour?.toFixed(2)}</span>
               </div>
 
-              {/* Waiting for lock */}
+              {/* Action: Proceed to Payment */}
               {!lockedByMe && !intentError && (
-                <div className="flex items-center gap-2 text-slate-500 text-sm py-2">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-primary-500 rounded-full animate-spin" />
-                  Locking your slot…
+                <div className="mt-4">
+                  <Button
+                    onClick={handleProceedToPayment}
+                    disabled={isProceeding}
+                    isLoading={isProceeding}
+                    className="w-full h-12 text-base font-bold"
+                  >
+                    {isProceeding ? 'Holding Slot...' : 'Proceed to Payment'}
+                  </Button>
                 </div>
               )}
 
@@ -502,6 +617,16 @@ function BookingFlowInner() {
                     Confirm On-Site Booking
                   </Button>
                 </div>
+              )}
+
+              {/* Cancel Hold Button */}
+              {lockedByMe && (
+                <button
+                  onClick={handleCancelHold}
+                  className="w-full py-2.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-all mt-2"
+                >
+                  Cancel & Release Slot
+                </button>
               )}
             </CardContent>
           </Card>

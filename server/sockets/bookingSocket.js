@@ -1,5 +1,7 @@
 const { Server } = require('socket.io');
-const { lockedSlots } = require('../services/lockService');
+const { lockedSlots, HOLD_DURATION_MS } = require('../services/lockService');
+const Booking = require('../models/Booking');
+const Property = require('../models/Property');
 
 let io;
 
@@ -27,17 +29,44 @@ const initSocket = (server) => {
       socket.leave(`property_${propertyId}`);
     });
 
-    // lock_slot event
-    socket.on('lock_slot', ({ propertyId, date, timeSlotStart, userId }) => {
+    // lock_slot event — creates a HELD booking in the database
+    socket.on('lock_slot', async ({ propertyId, date, timeSlotStart, userId }) => {
       const slotKey = `${propertyId}_${date}_${timeSlotStart}`;
 
-      // Prevent simultaneous locks on the same slot
+      // Prevent simultaneous locks on the same slot (check in-memory first)
       if (lockedSlots.has(slotKey)) {
-        socket.emit('lock_error', { message: 'Slot is already locked by another user' });
+        socket.emit('lock_error', { message: 'Slot is already held by another user' });
         return;
       }
 
-      // Enforce maximum of 2 pending slot locks per customer
+      // Also check DB for existing held/blocked booking on this slot
+      try {
+        const existingBooking = await Booking.findOne({
+          propertyId,
+          date: new Date(date),
+          'timeSlot.start': timeSlotStart,
+          status: { $in: ['held', 'blocked', 'booked', 'pending_onsite'] }
+        });
+
+        if (existingBooking) {
+          // If it's a held booking that has expired, release it
+          if (existingBooking.status === 'held' && existingBooking.holdExpiresAt && new Date(existingBooking.holdExpiresAt) < new Date()) {
+            existingBooking.status = 'cancelled';
+            existingBooking.holdExpiresAt = undefined;
+            await existingBooking.save();
+            // Continue — slot is now available
+          } else {
+            socket.emit('lock_error', { message: 'Slot is already taken' });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[Socket] DB check error:', err.message);
+        socket.emit('lock_error', { message: 'Server error. Please try again.' });
+        return;
+      }
+
+      // Enforce maximum of 2 pending slot holds per customer
       const userLockCount = [...lockedSlots.values()].filter(v => v.userId === userId).length;
       if (userLockCount >= 2) {
         socket.emit('lock_error', {
@@ -47,39 +76,126 @@ const initSocket = (server) => {
         return;
       }
 
-      // Start 120s timer
-      const timeoutId = setTimeout(() => {
-        lockedSlots.delete(slotKey);
-        io.to(`property_${propertyId}`).emit('slot_released', { propertyId, date, timeSlotStart });
-      }, 120000);
+      const expiresAt = new Date(Date.now() + HOLD_DURATION_MS);
 
-      const expiresAt = new Date(Date.now() + 120000);
-      lockedSlots.set(slotKey, { userId, timeoutId, expiresAt });
+      // Create HELD booking in the database
+      let booking;
+      try {
+        const property = await Property.findById(propertyId);
+        if (!property) {
+          socket.emit('lock_error', { message: 'Property not found' });
+          return;
+        }
+
+        // Generate the end time for the slot
+        const allSlots = generateSlots(
+          property.availableHours.start,
+          property.availableHours.end,
+          property.slotDurationMinutes
+        );
+        const matchedSlot = allSlots.find(s => s.start === timeSlotStart);
+        const timeSlotEnd = matchedSlot ? matchedSlot.end : timeSlotStart;
+
+        const durationHours = property.slotDurationMinutes / 60;
+        const totalAmount = property.pricePerHour * durationHours;
+
+        booking = await Booking.create({
+          customerId: userId,
+          propertyId,
+          date: new Date(date),
+          timeSlot: { start: timeSlotStart, end: timeSlotEnd },
+          status: 'held',
+          holdExpiresAt: expiresAt,
+          lockExpiresAt: expiresAt,
+          totalAmount
+        });
+      } catch (err) {
+        console.error('[Socket] Error creating held booking:', err.message);
+        socket.emit('lock_error', { message: 'Could not hold slot. Please try again.' });
+        return;
+      }
+
+      // Start timer to auto-release after hold duration
+      const timeoutId = setTimeout(async () => {
+        lockedSlots.delete(slotKey);
+
+        // Release the booking in the database
+        try {
+          const heldBooking = await Booking.findById(booking._id);
+          if (heldBooking && heldBooking.status === 'held') {
+            heldBooking.status = 'cancelled';
+            heldBooking.holdExpiresAt = undefined;
+            await heldBooking.save();
+            console.log(`[Socket] Auto-released expired hold for booking ${booking._id}`);
+          }
+        } catch (err) {
+          console.error('[Socket] Error auto-releasing hold:', err.message);
+        }
+
+        io.to(`property_${propertyId}`).emit('slot_released', { propertyId, date, timeSlotStart });
+      }, HOLD_DURATION_MS);
+
+      lockedSlots.set(slotKey, { userId, timeoutId, expiresAt, bookingId: booking._id.toString() });
 
       // Build payload and broadcast
-      const payload = { propertyId, date, timeSlotStart, userId, expiresAt };
+      const payload = { propertyId, date, timeSlotStart, userId, expiresAt, bookingId: booking._id };
       io.to(`property_${propertyId}`).emit('slot_locked', payload);
       socket.emit('lock_success', payload);
     });
 
-    // release_slot event
-    socket.on('release_slot', ({ propertyId, date, timeSlotStart, userId }) => {
+    // release_slot event — cancels the HELD booking
+    socket.on('release_slot', async ({ propertyId, date, timeSlotStart, userId }) => {
       const slotKey = `${propertyId}_${date}_${timeSlotStart}`;
       const lockedData = lockedSlots.get(slotKey);
 
       if (lockedData && lockedData.userId === userId) {
         clearTimeout(lockedData.timeoutId);
         lockedSlots.delete(slotKey);
+
+        // Release the booking in the database
+        try {
+          if (lockedData.bookingId) {
+            const booking = await Booking.findById(lockedData.bookingId);
+            if (booking && booking.status === 'held') {
+              booking.status = 'cancelled';
+              booking.holdExpiresAt = undefined;
+              await booking.save();
+              console.log(`[Socket] User cancelled held booking ${lockedData.bookingId}`);
+            }
+          }
+        } catch (err) {
+          console.error('[Socket] Error releasing held booking:', err.message);
+        }
+
         io.to(`property_${propertyId}`).emit('slot_released', { propertyId, date, timeSlotStart });
       }
     });
 
     socket.on('disconnect', () => {
       console.log(`Socket disconnected: ${socket.id}`);
-      // Usually we might clean up locks tied to this socket if they drop connection, 
-      // but without a strict user-socket mapping, the timer will handle abandonments.
+      // Timer will handle abandonments — held bookings auto-expire
     });
   });
+};
+
+// Helper to generate slots (same logic as bookingController)
+const generateSlots = (startStr, endStr, durationMins) => {
+  const { parse, addMinutes, isAfter, format } = require('date-fns');
+  const slots = [];
+  const fakeDate = new Date();
+  let current = parse(startStr, 'HH:mm', fakeDate);
+  const end = parse(endStr, 'HH:mm', fakeDate);
+
+  while (!isAfter(current, end)) {
+    const next = addMinutes(current, durationMins);
+    if (isAfter(next, end)) break;
+    slots.push({
+      start: format(current, 'HH:mm'),
+      end: format(next, 'HH:mm')
+    });
+    current = next;
+  }
+  return slots;
 };
 
 const getIo = () => io;

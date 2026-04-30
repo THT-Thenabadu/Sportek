@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../lib/axios';
+import useAuthStore from '../../store/useAuthStore';
 import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -17,6 +18,7 @@ function AddPropertyModal({ onClose, onAdded }) {
     availableEnd: '22:00',
     slotDurationMinutes: 60,
     imageUrl: '',
+    institute: '', // Optional institute for advantage booking
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -36,6 +38,7 @@ function AddPropertyModal({ onClose, onAdded }) {
         location: { address: form.locationAddress },
         availableHours: { start: form.availableStart, end: form.availableEnd },
         slotDurationMinutes: Number(form.slotDurationMinutes),
+        institute: form.institute,
         images: form.imageUrl ? [form.imageUrl] : [],
       };
       const res = await api.post('/properties', payload);
@@ -63,6 +66,7 @@ function AddPropertyModal({ onClose, onAdded }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <textarea rows={3} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" placeholder="Describe the facility..." value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
+          <Input label="Related Institute/Campus (Optional)" placeholder="e.g. SLIIT" value={form.institute} onChange={e => set('institute', e.target.value)} />
           <Input label="Price Per Hour ($)" type="number" required min="1" placeholder="e.g. 50" value={form.pricePerHour} onChange={e => set('pricePerHour', e.target.value)} />
           <Input label="Address" required placeholder="e.g. 10 Sports Lane, Colombo 07" value={form.locationAddress} onChange={e => set('locationAddress', e.target.value)} />
           <div className="grid grid-cols-2 gap-4">
@@ -87,6 +91,7 @@ function AddPropertyModal({ onClose, onAdded }) {
 }
 
 export function OwnerProperties() {
+  const { user } = useAuthStore();
   const [properties, setProperties] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [securityCreds, setSecurityCreds] = useState(null);
@@ -94,7 +99,7 @@ export function OwnerProperties() {
   const [copiedField, setCopiedField] = useState('');
 
   useEffect(() => {
-    api.get('/properties').then(res => setProperties(res.data)).catch(console.error);
+    api.get('/properties', { params: { ownerId: user._id } }).then(res => setProperties(res.data)).catch(console.error);
     
     // Fetch owner application to check for new security officer credentials
     api.get('/applications/my-application').then(res => {
@@ -106,7 +111,7 @@ export function OwnerProperties() {
         });
       }
     }).catch(() => { /* not all owners have this, suppress errors */ });
-  }, []);
+  }, [user]);
 
   const handleAdded = (newProp) => {
     setProperties(prev => [newProp, ...prev]);
@@ -522,3 +527,210 @@ export function OwnerWarnings() {
   );
 }
 
+// ── OwnerBookings ─────────────────────────────────────────────────────────────
+export function OwnerBookings() {
+  const { user } = useAuthStore();
+  const [properties, setProperties] = useState([]);
+  const [selectedProperty, setSelectedProperty] = useState('');
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // New slot block states
+  const [blockDate, setBlockDate] = useState('');
+  const [blockTimeStart, setBlockTimeStart] = useState('');
+  const [blockTimeEnd, setBlockTimeEnd] = useState('');
+  const [blockError, setBlockError] = useState('');
+
+  useEffect(() => {
+    api.get('/properties', { params: { ownerId: user._id } }).then(res => {
+      const props = res.data;
+      setProperties(props);
+      if (props.length > 0) {
+        setSelectedProperty(props[0]._id);
+      }
+    }).catch(console.error).finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedProperty) return;
+    setLoading(true);
+    api.get(`/bookings/property/${selectedProperty}`)
+      .then(res => setBookings(Array.isArray(res.data) ? res.data : []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [selectedProperty]);
+
+  const handleModification = async (bookingId, action) => {
+    try {
+      await api.post(`/bookings/${bookingId}/handle-modification`, { action });
+      alert(`Modification ${action}d successfully`);
+      const res = await api.get(`/bookings/property/${selectedProperty}`);
+      setBookings(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to handle modification request.');
+    }
+  };
+
+  const handleOwnerBlock = async (bookingId) => {
+    if (!window.confirm("Are you sure you want to block this booking? The customer will essentially be cancelled/blocked.")) return;
+    try {
+       await api.post(`/bookings/${bookingId}/owner-block`);
+       alert(`Booking blocked successfully`);
+       const res = await api.get(`/bookings/property/${selectedProperty}`);
+       setBookings(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to block booking.');
+    }
+  };
+
+  const handleBlockSlot = async (e) => {
+    e.preventDefault();
+    if (!blockDate || !blockTimeStart) return;
+
+    setBlockError('');
+
+    // Validations
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const selectedDateStr = selected.toISOString().split('T')[0];
+
+    if (selectedDateStr < todayStr) {
+      setBlockError('Cannot block slots in the past.');
+      return;
+    }
+
+    // If blocking for today, ensure time hasn't passed
+    if (selectedDateStr === todayStr) {
+      const [h, m] = blockTimeStart.split(':').map(Number);
+      if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) {
+        setBlockError('Cannot block a time that has already passed today.');
+        return;
+      }
+    }
+
+    if (blockTimeStart && blockTimeEnd) {
+      if (blockTimeEnd <= blockTimeStart) {
+        setBlockError('End time must be after start time.');
+        return;
+      }
+    }
+
+    try {
+      await api.post('/bookings/owner-block-slot', {
+        propertyId: selectedProperty,
+        date: blockDate,
+        timeSlotStart: blockTimeStart,
+        timeSlotEnd: blockTimeEnd
+      });
+      setBlockDate(''); setBlockTimeStart(''); setBlockTimeEnd('');
+      const res = await api.get(`/bookings/property/${selectedProperty}`);
+      setBookings(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setBlockError(err.response?.data?.message || 'Failed to block slot.');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-slate-900">Manage Bookings</h1>
+      </div>
+
+      <Card>
+         <CardContent className="p-4 bg-slate-50 flex gap-4 items-end">
+           <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Select Property</label>
+              <select
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={selectedProperty}
+                onChange={e => setSelectedProperty(e.target.value)}
+              >
+                {properties.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+              </select>
+           </div>
+         </CardContent>
+      </Card>
+
+      <Card>
+         <CardHeader>
+            <CardTitle>Block a New Slot</CardTitle>
+         </CardHeader>
+         <CardContent>
+            {blockError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">
+                {blockError}
+              </div>
+            )}
+            <form onSubmit={handleBlockSlot} className="flex flex-wrap gap-4 items-end">
+               <div>
+                 <Input label="Date" type="date" required value={blockDate} onChange={e => setBlockDate(e.target.value)} />
+               </div>
+               <div>
+                 <Input label="Start Time" type="time" required value={blockTimeStart} onChange={e => setBlockTimeStart(e.target.value)} />
+               </div>
+               <div>
+                 <Input label="End Time" type="time" value={blockTimeEnd} onChange={e => setBlockTimeEnd(e.target.value)} />
+               </div>
+               <div className="pb-1">
+                 <Button type="submit" variant="danger">Block Slot</Button>
+               </div>
+            </form>
+         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Current Bookings</CardTitle>
+        </CardHeader>
+        <CardContent>
+           {loading ? <p className="text-sm text-slate-500 py-4">Loading...</p> : bookings.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4">No bookings found for this property.</p>
+           ) : (
+              <div className="space-y-4">
+                 {bookings.map(b => (
+                   <div key={b._id} className="p-4 border rounded shadow-sm bg-white flex justify-between gap-4">
+                      <div>
+                         <p className="font-semibold">{b.customerId?.name} ({b.customerId?.email})</p>
+                         <p className="text-sm text-slate-500">{new Date(b.date).toLocaleDateString()} | {b.timeSlot?.start} - {b.timeSlot?.end}</p>
+                         <div className="mt-1 flex gap-2">
+                           <Badge>{b.status}</Badge>
+                           <Badge variant="outline">{b.paymentMethod}</Badge>
+                         </div>
+                         {b.modificationRequest && b.modificationRequest.status === 'pending' && (
+                            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                               <p className="font-semibold text-yellow-800">Modification Request</p>
+                               <p className="text-yellow-700">Requested Date: {new Date(b.modificationRequest.requestedDate).toLocaleDateString()}</p>
+                               <p className="text-yellow-700">Requested Time: {b.modificationRequest.requestedTimeSlot?.start} - {b.modificationRequest.requestedTimeSlot?.end}</p>
+                               <p className="text-yellow-700">Reason: {b.modificationRequest.reason}</p>
+                               <div className="mt-2 flex gap-2">
+                                  <Button size="sm" onClick={() => handleModification(b._id, 'approve')}>Approve</Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleModification(b._id, 'reject')}>Reject</Button>
+                               </div>
+                            </div>
+                         )}
+                         {b.modificationRequest && b.modificationRequest.status !== 'pending' && (
+                            <p className="text-xs text-slate-500 mt-2">Modification {b.modificationRequest.status}</p>
+                         )}
+                      </div>
+                      <div className="flex flex-col gap-2 items-end">
+                         {['booked', 'pending', 'pending_onsite'].includes(b.status) && (
+                            <Button 
+                              size="sm" 
+                              variant="danger" 
+                              className="flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all active:scale-95"
+                              onClick={() => handleOwnerBlock(b._id)}
+                            >
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              Block Booking
+                            </Button>
+                         )}
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -19,7 +19,7 @@ import BookingFlow from './pages/BookingFlow';
 
 // Dashboard Pages
 import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, CustomerComplaints } from './pages/dashboards/CustomerDashboard';
-import { OwnerProperties, OwnerAssets, OwnerWarnings } from './pages/dashboards/OwnerDashboard';
+import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerBookings } from './pages/dashboards/OwnerDashboard';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
 import SecurityScanner from './pages/dashboards/SecurityDashboard';
 
@@ -88,6 +88,7 @@ function App() {
             <Route path="properties" element={<ProtectedRoute role="propertyOwner"><OwnerProperties /></ProtectedRoute>} />
             <Route path="assets" element={<ProtectedRoute role="propertyOwner"><OwnerAssets /></ProtectedRoute>} />
             <Route path="warnings" element={<ProtectedRoute role="propertyOwner"><OwnerWarnings /></ProtectedRoute>} />
+            <Route path="bookings-mgmt" element={<ProtectedRoute role="propertyOwner"><OwnerBookings /></ProtectedRoute>} />
 
             {/* Admin Routes */}
             <Route path="admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />

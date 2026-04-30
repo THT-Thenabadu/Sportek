@@ -13,7 +13,7 @@ const generateToken = (id) => {
 // @access  Public
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, institute } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please add all fields' });
@@ -33,6 +33,7 @@ const registerUser = async (req, res) => {
       email,
       passwordHash,
       phone,
+      institute: institute || '',
       role: 'customer' // defaults to customer on signup
     });
 
@@ -42,6 +43,7 @@ const registerUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        institute: user.institute,
         token: generateToken(user._id),
       });
     } else {
@@ -71,6 +73,7 @@ const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        institute: user.institute,
         token: generateToken(user._id),
       });
     } else {

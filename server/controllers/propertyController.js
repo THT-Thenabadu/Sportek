@@ -5,8 +5,8 @@ const Property = require('../models/Property');
 // @access  Private/Owner or Admin
 const createProperty = async (req, res) => {
   try {
-    const { name, sportType, description, images, pricePerHour, location, availableHours, slotDurationMinutes } = req.body;
-    
+    const { name, sportType, description, images, pricePerHour, location, availableHours, slotDurationMinutes, institute } = req.body;
+
     // Check if user is trying to set ownerId (only admin can assign to others, owner creates for self)
     const ownerId = req.user.role === 'admin' && req.body.ownerId ? req.body.ownerId : req.user._id;
 
@@ -19,7 +19,8 @@ const createProperty = async (req, res) => {
       pricePerHour,
       location,
       availableHours,
-      slotDurationMinutes
+      slotDurationMinutes,
+      institute: institute || ''
     });
 
     res.status(201).json(property);
@@ -33,7 +34,11 @@ const createProperty = async (req, res) => {
 // @access  Public
 const getProperties = async (req, res) => {
   try {
-    const properties = await Property.find({ isActive: true }).populate('ownerId', 'name email');
+    const query = { isActive: true };
+    if (req.query.ownerId) {
+      query.ownerId = req.query.ownerId;
+    }
+    const properties = await Property.find(query).populate('ownerId', 'name email');
     res.json(properties);
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -5,6 +5,7 @@ import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal'; // Using the standard or making a simple one
 import { CalendarDays, Clock, DollarSign, ShieldCheck, Ticket, MapPin } from 'lucide-react';
 
 export function CustomerBookings() {
@@ -13,10 +14,16 @@ export function CustomerBookings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const [modifyingBooking, setModifyingBooking] = useState(null);
+  const [modDate, setModDate] = useState('');
+  const [modTime, setModTime] = useState('');
+  const [modTimeEnd, setModTimeEnd] = useState('');
+  const [modReason, setModReason] = useState('');
+  const [modError, setModError] = useState('');
+
+  const fetchBookings = () => {
     api.get('/bookings/my-bookings')
       .then(res => {
-        // Guard: ensure res.data is always an array
         setBookings(Array.isArray(res.data) ? res.data : []);
         setLoading(false);
       })
@@ -25,10 +32,16 @@ export function CustomerBookings() {
         setError(err.response?.data?.message || 'Could not load bookings. Please try again.');
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchBookings();
   }, []);
 
   const statusConfig = (status) => {
     const map = {
+      held: { variant: 'warning', label: 'Held (Pending Payment)' },
+      blocked: { variant: 'success', label: 'Confirmed' },
       booked: { variant: 'success', label: 'Confirmed' },
       completed: { variant: 'success', label: 'Completed' },
       cancelled: { variant: 'destructive', label: 'Cancelled' },
@@ -52,8 +65,81 @@ export function CustomerBookings() {
     );
   };
 
+  const handleModifySubmit = async (e) => {
+    e.preventDefault();
+
+    setModError('');
+
+    // Validations
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const selectedDateStr = selected.toISOString().split('T')[0];
+
+    if (selectedDateStr < todayStr) {
+      setModError('Requested date cannot be in the past.');
+      return;
+    }
+
+    // If requesting for today, ensure time hasn't passed
+    if (selectedDateStr === todayStr) {
+      const [h, m] = modTime.split(':').map(Number);
+      if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) {
+        setModError('Requested time has already passed for today.');
+        return;
+      }
+    }
+
+    if (modTime && modTimeEnd) {
+      if (modTimeEnd <= modTime) {
+        setModError('End time must be after start time.');
+        return;
+      }
+    }
+
+    try {
+      await api.post(`/bookings/${modifyingBooking._id}/request-modification`, {
+        requestedDate: modDate,
+        requestedTimeStart: modTime,
+        requestedTimeEnd: modTimeEnd,
+        reason: modReason
+      });
+      setModifyingBooking(null);
+      fetchBookings();
+    } catch (err) {
+      setModError(err.response?.data?.message || 'Failed to submit modification request.');
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {modifyingBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+             <h2 className="text-xl font-bold mb-4">Request Booking Change</h2>
+             <form onSubmit={handleModifySubmit} className="space-y-4">
+               {modError && (
+                 <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">
+                   {modError}
+                 </div>
+               )}
+               <Input label="New Date" type="date" required value={modDate} onChange={e => setModDate(e.target.value)} />
+               <div className="grid grid-cols-2 gap-4">
+                 <Input label="New Start Time" placeholder="e.g. 14:00" required value={modTime} onChange={e => setModTime(e.target.value)} />
+                 <Input label="New End Time" placeholder="e.g. 15:00" required value={modTimeEnd} onChange={e => setModTimeEnd(e.target.value)} />
+               </div>
+               <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
+                  <textarea rows={2} required className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500" value={modReason} onChange={e => setModReason(e.target.value)} />
+               </div>
+               <div className="flex justify-end gap-3 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setModifyingBooking(null)}>Cancel</Button>
+                  <Button type="submit">Submit Request</Button>
+               </div>
+             </form>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-slate-900">My Bookings</h1>
         <span className="text-sm text-slate-400">{bookings.length} booking{bookings.length !== 1 ? 's' : ''}</span>
@@ -161,6 +247,37 @@ export function CustomerBookings() {
                     )}
                   </div>
                 </CardContent>
+                <div className="px-4 py-3 border-t border-slate-100 flex flex-col gap-2">
+                  {b.modificationRequest && b.modificationRequest.requestedDate && (
+                    <div className={`text-xs px-3 py-2 rounded-lg flex items-center justify-between ${
+                      b.modificationRequest.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                      b.modificationRequest.status === 'rejected' ? 'bg-red-50 text-red-700 border border-red-100' :
+                      'bg-green-50 text-green-700 border border-green-100'
+                    }`}>
+                      <div className="flex flex-col">
+                        <span className="font-bold capitalize">Change Request {b.modificationRequest.status}</span>
+                        <span className="opacity-80">
+                          To: {new Date(b.modificationRequest.requestedDate).toLocaleDateString()} at {b.modificationRequest.requestedTimeSlot?.start} - {b.modificationRequest.requestedTimeSlot?.end || '?'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {(cfg.label === 'Confirmed' || cfg.label === 'Pay On Arrival') && 
+                   (!b.modificationRequest?.requestedDate || b.modificationRequest?.status === 'rejected') && (
+                    <div className="flex justify-end">
+                      <Button size="sm" variant="outline" onClick={() => {
+                         setModifyingBooking(b);
+                         setModDate(b.date ? b.date.split('T')[0] : '');
+                         setModTime(b.timeSlot?.start || '');
+                         setModTimeEnd(b.timeSlot?.end || '');
+                         setModReason('');
+                      }}>
+                        {b.modificationRequest?.status === 'rejected' ? 'Try Another Change' : 'Request Change'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </Card>
             );
           })}

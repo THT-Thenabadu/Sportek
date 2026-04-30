@@ -20,7 +20,7 @@ function Home() {
       })
       .catch(err => {
         console.error('Failed to fetch properties:', err);
-        setFetchError('Could not load facilities. Is the server running on port 5000?');
+        setFetchError('Could not load facilities. Is the server running on port 8000?');
         setLoadingProps(false);
       });
   }, []);

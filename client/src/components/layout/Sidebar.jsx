@@ -44,6 +44,7 @@ function Sidebar() {
         { name: 'My Properties', path: '/dashboard/properties', icon: Home     },
         { name: 'Assets',        path: '/dashboard/assets',     icon: Settings },
         { name: 'Warnings',      path: '/dashboard/warnings',   icon: AlertCircle, badge: unreadWarnings },
+        { name: 'Manage Bookings', path: '/dashboard/bookings-mgmt', icon: Calendar },
         { name: 'My Bookings',   path: '/dashboard/bookings',   icon: Calendar },
         { name: 'My Tickets',    path: '/dashboard/tickets',    icon: Ticket   },
       ];

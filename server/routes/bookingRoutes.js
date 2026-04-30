@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getAvailableSlots, createPaymentIntent, stripeWebhook, getMyBookings, getPropertyBookings, markAttendance, getBookingById } = require('../controllers/bookingController');
+const { getAvailableSlots, createPaymentIntent, cancelHold, stripeWebhook, getMyBookings, getPropertyBookings, markAttendance, getBookingById, requestModification, handleModification, ownerBlockBooking, ownerBlockNewSlot } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middleware/auth');
 const Booking = require('../models/Booking');
 const Property = require('../models/Property');
@@ -9,6 +9,9 @@ const Property = require('../models/Property');
 router.route('/slots/:propertyId').get(getAvailableSlots);
 
 router.route('/create-payment-intent').post(protect, createPaymentIntent);
+
+// Explicit cancellation of a held slot
+router.route('/cancel-hold').post(protect, cancelHold);
 
 router.route('/my-bookings').get(protect, getMyBookings);
 
@@ -64,7 +67,7 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       customerId: req.user._id,
       date: new Date(date),
       'timeSlot.start': timeSlotStart,
-      status: 'pending'
+      status: { $in: ['pending', 'held'] }
     });
 
     console.log('Onsite booking attempt:', { propertyId, date, timeSlotStart, status: ['booked', 'pending_onsite'] });
@@ -72,7 +75,7 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       propertyId,
       date: new Date(date),
       'timeSlot.start': timeSlotStart,
-      status: { $in: ['booked', 'pending_onsite'] }
+      status: { $in: ['held', 'blocked', 'booked', 'pending_onsite'] }
     });
     console.log('Existing booking found:', existing);
     if (existing) return res.status(400).json({ message: 'This slot is already taken' });
@@ -129,10 +132,15 @@ router.patch('/:id/mark-paid', protect, authorize('securityOfficer'), async (req
 });
 
 router.route('/:id').get(protect, authorize('admin', 'securityOfficer', 'propertyOwner'), getBookingById);
-router.route('/:id/attendance').patch(protect, authorize('admin', 'securityOfficer'), markAttendance);
+router.route('/:id/attendance').patch(protect, authorize('securityOfficer', 'propertyOwner', 'admin'), markAttendance);
+
+// Modifications
+router.post('/:id/request-modification', protect, requestModification);
+router.post('/:id/handle-modification', protect, authorize('propertyOwner', 'admin'), handleModification);
+router.post('/:id/owner-block', protect, authorize('propertyOwner', 'admin'), ownerBlockBooking);
+router.post('/owner-block-slot', protect, authorize('propertyOwner', 'admin'), ownerBlockNewSlot);
 
 // Raw body parsing for this route is applied in index.js via app.use('/api/bookings/webhook', express.raw(...))
 router.post('/webhook', stripeWebhook);
 
 module.exports = router;
-
