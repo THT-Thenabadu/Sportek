@@ -7,7 +7,7 @@ const Property = require('../models/Property');
 // POST /api/assets — propertyOwner only — create asset linked to owner's property
 router.post('/', protect, authorize('propertyOwner'), async (req, res) => {
   try {
-    const { name, category, assetType, property, quantity, availableQuantity, healthStatus, notes } = req.body;
+    const { name, category, assetType, property, quantity, availableQuantity, healthStatus, notes, image, description } = req.body;
 
     // Verify the property exists and check ownership
     const prop = await Property.findById(property);
@@ -24,7 +24,9 @@ router.post('/', protect, authorize('propertyOwner'), async (req, res) => {
       quantity: quantity ?? 1,
       availableQuantity: availableQuantity ?? quantity ?? 1,
       healthStatus: healthStatus || 'good',
-      notes: notes || ''
+      notes: notes || '',
+      image: image || '',
+      description: description || ''
     });
 
     res.status(201).json(asset);
@@ -88,6 +90,43 @@ router.patch('/:id/health', protect, authorize('propertyOwner'), async (req, res
     const update = {};
     if (healthStatus !== undefined) update.healthStatus = healthStatus;
     if (notes !== undefined) update.notes = notes;
+
+    const updated = await Asset.findByIdAndUpdate(req.params.id, update, { new: true });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// PUT /api/assets/:id — propertyOwner only — update full asset details (name, image, desc, etc.)
+router.put('/:id', protect, authorize('propertyOwner'), async (req, res) => {
+  try {
+    const asset = await Asset.findById(req.params.id).populate('property', 'ownerId');
+    if (!asset) return res.status(404).json({ message: 'Asset not found' });
+
+    if (asset.property?.ownerId?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const { name, category, assetType, quantity, availableQuantity, healthStatus, notes, image, description } = req.body;
+    
+    // Calculate new available quantity if total quantity changed
+    let newAvailableQuantity = asset.availableQuantity;
+    if (quantity !== undefined && quantity !== asset.quantity) {
+      const diff = quantity - asset.quantity;
+      newAvailableQuantity = Math.max(0, asset.availableQuantity + diff);
+    }
+
+    const update = {};
+    if (name !== undefined) update.name = name;
+    if (category !== undefined) update.category = category;
+    if (assetType !== undefined) update.assetType = assetType;
+    if (quantity !== undefined) update.quantity = quantity;
+    if (quantity !== undefined) update.availableQuantity = newAvailableQuantity;
+    if (healthStatus !== undefined) update.healthStatus = healthStatus;
+    if (notes !== undefined) update.notes = notes;
+    if (image !== undefined) update.image = image;
+    if (description !== undefined) update.description = description;
 
     const updated = await Asset.findByIdAndUpdate(req.params.id, update, { new: true });
     res.json(updated);

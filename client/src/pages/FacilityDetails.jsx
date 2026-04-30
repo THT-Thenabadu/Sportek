@@ -94,12 +94,9 @@ function FacilityDetails() {
   useEffect(() => {
     const fetchDetails = async () => {
       try {
-        const [propRes, assetRes] = await Promise.all([
-          api.get(`/properties/${id}`),
-          api.get(`/assets/bundled/${id}`).catch(() => ({ data: [] }))
-        ]);
+        const propRes = await api.get(`/properties/${id}`);
         setProperty(propRes.data);
-        setAssets(assetRes.data);
+        setAssets(propRes.data.bundledAssets || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -135,20 +132,33 @@ function FacilityDetails() {
             <h2 className="text-2xl font-bold mb-4">About this facility</h2>
             <p className="text-slate-700 whitespace-pre-wrap">{property.description}</p>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Available Assets</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-               {assets.map(a => (
-                 <Card key={a._id} className="p-4 flex flex-col items-center text-center">
-                    <span className="font-semibold mb-2">{a.name}</span>
-                    <Badge variant={a.condition === 'Good' ? 'success' : a.condition === 'Damaged' ? 'destructive' : 'warning'}>
-                      {a.condition}
-                    </Badge>
-                 </Card>
-               ))}
-               {assets.length === 0 && <p className="text-slate-500">No assets listed.</p>}
+          {assets.length > 0 && (
+            <div>
+              <h2 className="text-2xl font-bold mb-4">Assets & Equipment</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {assets.map(a => (
+                  <Card key={a._id} className="p-4 flex gap-4 items-center">
+                    {a.image ? (
+                      <img src={a.image} alt={a.name} className="w-20 h-20 object-cover rounded-lg bg-slate-100 shrink-0 border border-slate-200" />
+                    ) : (
+                      <div className="w-20 h-20 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs shrink-0 border border-slate-200">
+                        No Img
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-bold text-slate-800">{a.name}</span>
+                        <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-full whitespace-nowrap">
+                          Qty: {a.quantity}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 line-clamp-2" title={a.description}>{a.description || a.assetType}</p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           
           {/* Reviews Block */}
           <div className="pt-8 border-t border-slate-200">

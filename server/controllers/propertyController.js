@@ -37,7 +37,9 @@ const createProperty = async (req, res) => {
 // @access  Private/Owner or Admin
 const getMyProperties = async (req, res) => {
   try {
-    const properties = await Property.find({ ownerId: req.user._id }).populate('ownerId', 'name email');
+    const properties = await Property.find({ ownerId: req.user._id })
+      .populate('ownerId', 'name email')
+      .populate('bundledAssets');
     res.json(properties);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -49,7 +51,9 @@ const getMyProperties = async (req, res) => {
 // @access  Public
 const getProperties = async (req, res) => {
   try {
-    const properties = await Property.find({ isActive: true }).populate('ownerId', 'name email');
+    const properties = await Property.find({ isActive: true })
+      .populate('ownerId', 'name email')
+      .populate('bundledAssets');
     res.json(properties);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -61,7 +65,9 @@ const getProperties = async (req, res) => {
 // @access  Public
 const getPropertyById = async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id).populate('ownerId', 'name email');
+    const property = await Property.findById(req.params.id)
+      .populate('ownerId', 'name email')
+      .populate('bundledAssets');
     if (!property) {
       return res.status(404).json({ message: 'Property not found' });
     }

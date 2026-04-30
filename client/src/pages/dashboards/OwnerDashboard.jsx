@@ -257,11 +257,95 @@ function EditPropertyModal({ property, onClose, onUpdated }) {
   );
 }
 
+function BundleAssetsModal({ property, onClose, onUpdated }) {
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState(new Set(property.bundledAssets?.map(a => a._id || a) || []));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get(`/assets/property/${property._id}`)
+      .then(res => setAssets(res.data))
+      .catch(err => setError('Failed to load assets.'))
+      .finally(() => setLoading(false));
+  }, [property._id]);
+
+  const toggleAsset = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const res = await api.put(`/properties/${property._id}`, { bundledAssets: Array.from(selectedIds) });
+      onUpdated(res.data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to bundle assets.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b shrink-0">
+          <h2 className="text-xl font-bold text-slate-900">Bundle Assets</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div className="p-6 overflow-y-auto flex-1">
+          <p className="text-sm text-slate-600 mb-4">Select the assets you want to display on the <strong>{property.name}</strong> venue page.</p>
+          {error && <div className="p-3 mb-4 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
+          
+          {loading ? (
+            <p className="text-center text-slate-500 py-4">Loading assets...</p>
+          ) : assets.length === 0 ? (
+            <p className="text-center text-slate-500 py-4 border rounded-lg bg-slate-50">No assets found for this property.</p>
+          ) : (
+            <div className="space-y-2">
+              {assets.map(a => (
+                <label key={a._id} className="flex items-center gap-3 p-3 border rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                  <input type="checkbox" checked={selectedIds.has(a._id)} onChange={() => toggleAsset(a._id)} className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500" />
+                  <div className="flex-1 flex items-center gap-3">
+                    {a.image ? (
+                      <img src={a.image} alt={a.name} className="w-10 h-10 object-cover rounded-lg bg-slate-100 shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs shrink-0 border">No Img</div>
+                    )}
+                    <div>
+                      <p className="font-medium text-sm text-slate-800">{a.name}</p>
+                      <p className="text-xs text-slate-500">{a.assetType} • Qty: {a.quantity}</p>
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 p-6 border-t shrink-0">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} isLoading={saving}>Save Bundle</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OwnerProperties() {
   const [properties, setProperties] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState(null);
   const [slotProperty, setSlotProperty] = useState(null);
+  const [bundleProperty, setBundleProperty] = useState(null);
   const [securityCreds, setSecurityCreds] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [copiedField, setCopiedField] = useState('');
@@ -379,6 +463,15 @@ export function OwnerProperties() {
           onClose={() => setSlotProperty(null)} 
         />
       )}
+      {bundleProperty && (
+        <BundleAssetsModal
+          property={bundleProperty}
+          onClose={() => setBundleProperty(null)}
+          onUpdated={(updated) => {
+            setProperties(prev => prev.map(p => p._id === updated._id ? updated : p));
+          }}
+        />
+      )}
       <Card>
         <CardHeader className="flex justify-between flex-row items-center">
           <CardTitle>My Properties</CardTitle>
@@ -387,23 +480,35 @@ export function OwnerProperties() {
         <CardContent className="space-y-4">
           {properties.length === 0 && <p className="text-slate-500 py-4 text-center">No properties yet. Add your first one!</p>}
           {properties.map(p => (
-            <div key={p._id} className="p-4 border rounded-lg bg-white flex justify-between items-center shadow-sm">
-              <div>
-                <h3 className="font-bold text-lg">{p.name} <Badge variant={p.isActive ? 'success' : 'destructive'} className="ml-2">{p.isActive ? 'Active' : 'Deactivated'}</Badge></h3>
-                <p className="text-sm text-slate-500">{p.sportType} · {p.location?.address}</p>
-                <p className="text-sm font-semibold mt-1">${p.pricePerHour} / hour · {p.availableHours?.start} – {p.availableHours?.end}</p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="outline" className="border-primary-200 text-primary-700 hover:bg-primary-50" onClick={() => setSlotProperty(p)}>Manage Slots</Button>
-                <Button size="sm" variant="outline" onClick={() => setEditingProperty(p)}>Edit</Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="text-red-600 border-red-200 hover:bg-red-50"
-                  onClick={() => handleDelete(p._id)}
-                >
-                  Delete
-                </Button>
+            <div key={p._id} className="border rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col md:flex-row">
+              {p.images && p.images[0] ? (
+                <div className="w-full md:w-48 h-32 md:h-auto shrink-0 border-b md:border-b-0 md:border-r border-slate-200">
+                  <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="w-full md:w-48 h-32 md:h-auto shrink-0 bg-slate-100 border-b md:border-b-0 md:border-r border-slate-200 flex items-center justify-center text-slate-400 text-sm font-medium">
+                  No Image
+                </div>
+              )}
+              <div className="p-5 flex-1 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h3 className="font-bold text-lg">{p.name} <Badge variant={p.isActive ? 'success' : 'destructive'} className="ml-2">{p.isActive ? 'Active' : 'Deactivated'}</Badge></h3>
+                  <p className="text-sm text-slate-500">{p.sportType} · {p.location?.address}</p>
+                  <p className="text-sm font-semibold mt-1">${p.pricePerHour} / hour · {p.availableHours?.start} – {p.availableHours?.end}</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setBundleProperty(p)}>Bundle Assets</Button>
+                  <Button size="sm" variant="outline" className="border-primary-200 text-primary-700 hover:bg-primary-50" onClick={() => setSlotProperty(p)}>Manage Slots</Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditingProperty(p)}>Edit</Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => handleDelete(p._id)}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
@@ -420,8 +525,10 @@ function AddAssetModal({ propertyId, onClose, onAdded }) {
     category: 'Equipment',
     assetType: '',
     quantity: 1,
+    description: '',
     notes: '',
   });
+  const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -432,19 +539,38 @@ function AddAssetModal({ propertyId, onClose, onAdded }) {
     setSaving(true);
     setError('');
     try {
+      let imageUrl = '';
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'SportekEvent');
+        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.secure_url) {
+          imageUrl = uploadData.secure_url;
+        } else {
+          throw new Error('Image upload failed');
+        }
+      }
+
       const res = await api.post('/assets', {
         name: form.name,
         category: form.category,
         assetType: form.assetType,
         quantity: Number(form.quantity),
+        description: form.description,
         notes: form.notes,
-        property: propertyId, // Explicitly include the property ID
+        image: imageUrl,
+        property: propertyId,
         availableQuantity: Number(form.quantity),
       });
       onAdded(res.data);
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add asset.');
+      setError(err.response?.data?.message || err.message || 'Failed to add asset.');
     } finally {
       setSaving(false);
     }
@@ -468,15 +594,122 @@ function AddAssetModal({ propertyId, onClose, onAdded }) {
               {['Equipment', 'Facility Add-on', 'Safety/Misc'].map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-          <Input label="Asset Type" required placeholder="e.g. Football, Tennis Racquet, First Aid Kit" value={form.assetType} onChange={e => set('assetType', e.target.value)} />
+          <Input label="Asset Type" required placeholder="e.g. Football, Tennis Racquet" value={form.assetType} onChange={e => set('assetType', e.target.value)} />
           <Input label="Quantity" type="number" required min="1" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Notes (optional)</label>
-            <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" placeholder="Any notes about this asset..." value={form.notes} onChange={e => set('notes', e.target.value)} />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Asset Image (Cloudinary)</label>
+            <input type="file" accept="image/*" className="w-full text-sm border rounded-lg p-2 bg-slate-50" onChange={e => setFile(e.target.files[0])} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description (for booking page)</label>
+            <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" placeholder="Describe the asset for customers..." value={form.description} onChange={e => set('description', e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Internal Notes (optional)</label>
+            <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" placeholder="Any private notes about this asset..." value={form.notes} onChange={e => set('notes', e.target.value)} />
           </div>
           <div className="flex justify-end gap-3 pt-2 border-t mt-4">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" isLoading={saving}>Add Asset</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Edit Asset Modal ─────────────────────────────────────────────────────────
+function EditAssetModal({ asset, onClose, onUpdated }) {
+  const [form, setForm] = useState({
+    name: asset.name || '',
+    category: asset.category || 'Equipment',
+    assetType: asset.assetType || '',
+    quantity: asset.quantity || 1,
+    description: asset.description || '',
+    notes: asset.notes || '',
+  });
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      let imageUrl = asset.image;
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'SportekEvent');
+        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.secure_url) {
+          imageUrl = uploadData.secure_url;
+        } else {
+          throw new Error('Image upload failed');
+        }
+      }
+
+      const res = await api.put(`/assets/${asset._id}`, {
+        name: form.name,
+        category: form.category,
+        assetType: form.assetType,
+        quantity: Number(form.quantity),
+        description: form.description,
+        notes: form.notes,
+        image: imageUrl,
+      });
+      onUpdated(res.data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Failed to update asset.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b">
+          <h2 className="text-xl font-bold text-slate-900">Edit Asset</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
+          <Input label="Asset Name" required value={form.name} onChange={e => set('name', e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+            <select className={selectCls} value={form.category} onChange={e => set('category', e.target.value)}>
+              {['Equipment', 'Facility Add-on', 'Safety/Misc'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <Input label="Asset Type" required value={form.assetType} onChange={e => set('assetType', e.target.value)} />
+          <Input label="Total Quantity" type="number" required min="1" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Asset Image (Upload to replace)</label>
+            {asset.image && !file && <img src={asset.image} alt={asset.name} className="h-16 rounded mb-2 border" />}
+            <input type="file" accept="image/*" className="w-full text-sm border rounded-lg p-2 bg-slate-50" onChange={e => setFile(e.target.files[0])} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description (for booking page)</label>
+            <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" value={form.description} onChange={e => set('description', e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Internal Notes</label>
+            <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" value={form.notes} onChange={e => set('notes', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t mt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" isLoading={saving}>Save Changes</Button>
           </div>
         </form>
       </div>
@@ -545,7 +778,8 @@ export function OwnerAssets() {
   const [propertyId, setPropertyId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingAsset, setEditingAsset] = useState(null);
+  const [editingHealthAsset, setEditingHealthAsset] = useState(null);
+  const [editingFullAsset, setEditingFullAsset] = useState(null);
 
   useEffect(() => {
     api.get('/properties/my-properties').then(async (propRes) => {
@@ -580,8 +814,11 @@ export function OwnerAssets() {
       {showAddModal && propertyId && (
         <AddAssetModal propertyId={propertyId} onClose={() => setShowAddModal(false)} onAdded={handleAdded} />
       )}
-      {editingAsset && (
-        <UpdateHealthModal asset={editingAsset} onClose={() => setEditingAsset(null)} onUpdated={handleUpdated} />
+      {editingHealthAsset && (
+        <UpdateHealthModal asset={editingHealthAsset} onClose={() => setEditingHealthAsset(null)} onUpdated={handleUpdated} />
+      )}
+      {editingFullAsset && (
+        <EditAssetModal asset={editingFullAsset} onClose={() => setEditingFullAsset(null)} onUpdated={handleUpdated} />
       )}
 
       <Card>
@@ -601,7 +838,7 @@ export function OwnerAssets() {
               <table className="w-full text-sm text-left">
                 <thead>
                   <tr className="bg-slate-50 border-b">
-                    {['Name', 'Type', 'Category', 'Qty', 'Available', 'Health', 'Returned', 'Notes', 'Actions'].map(h => (
+                    {['Image', 'Name', 'Type', 'Category', 'Qty', 'Available', 'Health', 'Returned', 'Notes', 'Actions'].map(h => (
                       <th key={h} className="px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -611,6 +848,13 @@ export function OwnerAssets() {
                     const retired = a.healthStatus === 'retired';
                     return (
                       <tr key={a._id} className={`border-b transition-colors ${retired ? 'opacity-50 bg-slate-50' : 'bg-white hover:bg-slate-50/60'}`}>
+                        <td className="px-4 py-3">
+                          {a.image ? (
+                            <img src={a.image} alt={a.name} className="w-10 h-10 object-cover rounded shadow-sm border" />
+                          ) : (
+                            <div className="w-10 h-10 bg-slate-100 rounded border flex items-center justify-center text-slate-400 text-xs">No Img</div>
+                          )}
+                        </td>
                         <td className="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{a.name}</td>
                         <td className="px-4 py-3 text-slate-500">{a.assetType}</td>
                         <td className="px-4 py-3">
@@ -633,9 +877,14 @@ export function OwnerAssets() {
                         </td>
                         <td className="px-4 py-3 text-slate-400 max-w-[140px] truncate" title={a.notes}>{a.notes || '—'}</td>
                         <td className="px-4 py-3">
-                          <Button size="sm" variant="outline" onClick={() => setEditingAsset(a)}>
-                            Update Health
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => setEditingFullAsset(a)}>
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingHealthAsset(a)}>
+                              Health
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
