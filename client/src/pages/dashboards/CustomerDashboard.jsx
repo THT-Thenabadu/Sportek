@@ -566,50 +566,130 @@ export function CustomerTickets() {
 }
 
 export function CustomerReviews() {
-  const [completedBookings, setCompletedBookings] = useState([]);
+  const [facilities, setFacilities] = useState([]);
+  const [myReviews, setMyReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [ratings, setRatings] = useState({});
-  const [comments, setComments] = useState({});
-  const [submitting, setSubmitting] = useState({});
-  const [successMsg, setSuccessMsg] = useState('');
+  
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentFacility, setCurrentFacility] = useState(null);
+  const [existingReview, setExistingReview] = useState(null);
+  
+  // Form state
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [bookingsRes, reviewsRes] = await Promise.all([
+        api.get('/bookings/my-bookings'),
+        api.get('/reviews/my-reviews')
+      ]);
+
+      const allBookings = Array.isArray(bookingsRes.data) ? bookingsRes.data : [];
+      const userReviews = Array.isArray(reviewsRes.data) ? reviewsRes.data : [];
+      
+      setMyReviews(userReviews);
+
+      // Filter bookings: booked/completed/confirmed AND attendanceStatus confirmed
+      const validBookings = allBookings.filter(b => 
+        (b.status === 'booked' || b.status === 'completed' || b.status === 'confirmed') && 
+        b.attendanceStatus === 'confirmed' &&
+        b.propertyId // Ensure propertyId is populated
+      );
+
+      // Group by propertyId
+      const uniqueFacilitiesMap = new Map();
+      validBookings.forEach(b => {
+        const prop = b.propertyId;
+        if (!uniqueFacilitiesMap.has(prop._id)) {
+          uniqueFacilitiesMap.set(prop._id, {
+            propertyId: prop._id,
+            name: prop.name,
+            image: prop.images && prop.images[0] ? prop.images[0] : null,
+            sportType: prop.sportType || 'Sports Facility',
+            address: prop.location?.address || 'No address provided',
+            bookingId: b._id // Keep one booking ID for the POST /api/reviews requirement
+          });
+        }
+      });
+
+      setFacilities(Array.from(uniqueFacilitiesMap.values()));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not load review data.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api.get('/bookings/my-bookings')
-      .then(res => {
-        const arr = Array.isArray(res.data) ? res.data : [];
-        setCompletedBookings(arr.filter(b => b.status === 'completed'));
-        setLoading(false);
-      })
-      .catch(err => {
-        setError(err.response?.data?.message || 'Could not load completed bookings.');
-        setLoading(false);
-      });
+    fetchData();
   }, []);
 
-  const handleSubmit = async (b) => {
-    const rating = ratings[b._id] || 0;
-    const comment = comments[b._id] || '';
-    if (rating === 0) {
-      setError('Please select a rating before submitting.');
-      return;
+  const openReviewModal = (facility, review) => {
+    setCurrentFacility(facility);
+    if (review) {
+      setExistingReview(review);
+      setRating(review.rating);
+      setComment(review.comment || '');
+    } else {
+      setExistingReview(null);
+      setRating(0);
+      setComment('');
     }
-    setSubmitting(prev => ({ ...prev, [b._id]: true }));
-    setError('');
-    setSuccessMsg('');
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const closeReviewModal = () => {
+    setIsModalOpen(false);
+    setCurrentFacility(null);
+    setExistingReview(null);
+    setRating(0);
+    setComment('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (rating === 0) return setFormError('Please select a rating (1-5 stars).');
+    if (comment.trim().length < 10) return setFormError('Review comment must be at least 10 characters long.');
+    
+    setSubmitting(true);
+    setFormError('');
+
     try {
-      await api.post('/reviews', {
-        bookingId: b._id,
-        propertyId: b.propertyId?._id,
-        rating,
-        comment
-      });
-      setSuccessMsg('Review submitted successfully!');
-      setCompletedBookings(prev => prev.filter(booking => booking._id !== b._id));
+      if (existingReview) {
+        // Update existing review
+        await api.put(`/reviews/${existingReview._id}`, { rating, comment });
+      } else {
+        // Create new review
+        await api.post('/reviews', {
+          propertyId: currentFacility.propertyId,
+          bookingId: currentFacility.bookingId,
+          rating,
+          comment
+        });
+      }
+      closeReviewModal();
+      fetchData(); // Refresh reviews
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to submit review.');
+      setFormError(err.response?.data?.message || 'Failed to submit review.');
     } finally {
-      setSubmitting(prev => ({ ...prev, [b._id]: false }));
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (reviewId) => {
+    if (!window.confirm('Are you sure you want to delete this review?')) return;
+    try {
+      await api.delete(`/reviews/${reviewId}`);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete review.');
     }
   };
 
@@ -617,64 +697,116 @@ export function CustomerReviews() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-slate-900">My Reviews</h1>
-        <span className="text-sm text-slate-400">{completedBookings.length} pending review{completedBookings.length !== 1 ? 's' : ''}</span>
+        <span className="text-sm text-slate-400">{facilities.length} facility(s) attended</span>
       </div>
+
       {error && <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
-      {successMsg && <div className="p-4 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">{successMsg}</div>}
+
       {loading ? (
         <div className="flex justify-center py-16">
            <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
-      ) : completedBookings.length === 0 ? (
+      ) : facilities.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-            <span className="text-2xl">★</span>
+            <span className="text-2xl text-slate-400">★</span>
           </div>
-          <h3 className="text-lg font-semibold text-slate-700 mb-1">No pending reviews</h3>
-          <p className="text-slate-400 text-sm max-w-xs">You have no completed bookings to review right now.</p>
+          <h3 className="text-lg font-semibold text-slate-700 mb-1">No visited facilities</h3>
+          <p className="text-slate-400 text-sm max-w-xs">You have not attended any bookings yet. Reviews can be left after attendance is confirmed.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {completedBookings.map(b => (
-            <Card key={b._id}>
-              <CardHeader className="bg-slate-50 border-b pb-3">
-                <CardTitle className="text-base font-semibold">{b.propertyId?.name || 'Property'}</CardTitle>
-                <div className="text-sm text-slate-500">
-                  {b.date ? new Date(b.date).toLocaleDateString() : '—'}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {facilities.map(facility => {
+            const review = myReviews.find(r => r.propertyId?._id === facility.propertyId || r.propertyId === facility.propertyId);
+
+            return (
+              <Card key={facility.propertyId} className="flex flex-col h-full overflow-hidden hover:shadow-md transition-shadow">
+                <div className="h-40 bg-slate-200 relative">
+                  {facility.image ? (
+                    <img src={facility.image} alt={facility.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">No Image</div>
+                  )}
+                  <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                    {facility.sportType}
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-4">
+                
+                <CardContent className="flex-1 flex flex-col p-5">
+                  <h3 className="text-lg font-bold text-slate-900 truncate mb-1" title={facility.name}>{facility.name}</h3>
+                  <div className="flex items-start gap-1 text-slate-500 text-sm mb-4 line-clamp-2" title={facility.address}>
+                    <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
+                    <span>{facility.address}</span>
+                  </div>
+
+                  {review ? (
+                    <div className="mt-auto pt-4 border-t border-slate-100">
+                      <div className="flex items-center gap-1 mb-2">
+                        {[1,2,3,4,5].map(s => (
+                          <span key={s} className={`text-lg leading-none ${s <= review.rating ? 'text-yellow-400' : 'text-slate-200'}`}>★</span>
+                        ))}
+                      </div>
+                      <p className="text-sm text-slate-600 italic line-clamp-2 mb-3">"{review.comment}"</p>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openReviewModal(facility, review)}>Edit Review</Button>
+                        <Button size="sm" variant="destructive" className="flex-1 text-xs" onClick={() => handleDelete(review._id)}>Delete</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-auto pt-4 border-t border-slate-100">
+                      <Button className="w-full" onClick={() => openReviewModal(facility, null)}>Write a Review</Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {isModalOpen && currentFacility && (
+        <Modal isOpen={isModalOpen} onClose={closeReviewModal}>
+          <div className="p-6">
+            <h2 className="text-xl font-bold text-slate-900 mb-1">{existingReview ? 'Edit Review' : 'Write a Review'}</h2>
+            <p className="text-sm text-slate-500 mb-6">For {currentFacility.name}</p>
+            
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {formError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">{formError}</div>}
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Rating</label>
                 <div className="flex gap-2">
                   {[1, 2, 3, 4, 5].map(star => (
-                    <span
+                    <button
+                      type="button"
                       key={star}
-                      onClick={() => setRatings(prev => ({ ...prev, [b._id]: star }))}
-                      className={`cursor-pointer text-2xl ${
-                        (ratings[b._id] || 0) >= star ? 'text-yellow-400' : 'text-slate-300'
-                      }`}
+                      onClick={() => setRating(star)}
+                      className={`text-3xl focus:outline-none transition-colors ${rating >= star ? 'text-yellow-400' : 'text-slate-200 hover:text-yellow-200'}`}
                     >
                       ★
-                    </span>
+                    </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Comment</label>
                 <textarea
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-                  rows={3}
-                  placeholder="Write your comment..."
-                  value={comments[b._id] || ''}
-                  onChange={e => setComments(prev => ({ ...prev, [b._id]: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none min-h-[100px]"
+                  placeholder="Share your experience (minimum 10 characters)..."
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
                 />
-                <Button 
-                  onClick={() => handleSubmit(b)} 
-                  disabled={submitting[b._id]}
-                  className="w-full"
-                >
-                  {submitting[b._id] ? 'Submitting...' : 'Submit Review'}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={closeReviewModal}>Cancel</Button>
+                <Button type="submit" isLoading={submitting}>{existingReview ? 'Update Review' : 'Submit Review'}</Button>
+              </div>
+            </form>
+          </div>
+        </Modal>
       )}
     </div>
   );

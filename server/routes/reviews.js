@@ -30,13 +30,53 @@ router.post('/', protect, authorize('customer'), async (req, res) => {
   }
 });
 
-// GET /api/reviews/property/:propertyId — public, returns all reviews for a property populated with customer name, sorted newest first
-router.get('/property/:propertyId', async (req, res) => {
+// GET /api/reviews/my-reviews — customer only, returns all reviews written by the logged in customer
+router.get('/my-reviews', protect, authorize('customer'), async (req, res) => {
+  try {
+    const reviews = await Review.find({ customerId: req.user._id })
+      .populate('propertyId', 'name')
+      .sort('-createdAt');
+    res.json(reviews);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/reviews/property/:propertyId — admin only, returns all reviews for a property
+router.get('/property/:propertyId', protect, authorize('admin'), async (req, res) => {
   try {
     const reviews = await Review.find({ propertyId: req.params.propertyId })
       .populate('customerId', 'name')
       .sort('-createdAt');
     res.json(reviews);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/reviews/:id — customer only, update their own review
+router.put('/:id', protect, authorize('customer'), async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const review = await Review.findOne({ _id: req.params.id, customerId: req.user._id });
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+
+    if (rating) review.rating = rating;
+    if (comment !== undefined) review.comment = comment;
+
+    await review.save();
+    res.json(review);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/reviews/:id — customer only, delete their own review
+router.delete('/:id', protect, authorize('customer'), async (req, res) => {
+  try {
+    const review = await Review.findOneAndDelete({ _id: req.params.id, customerId: req.user._id });
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+    res.json({ message: 'Review deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

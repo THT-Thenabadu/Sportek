@@ -13,7 +13,7 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
-const chatRoutes = require('./routes/chatRoutes');
+
 const userRoutes = require('./routes/userRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const reviewRoutes = require('./routes/reviews');
@@ -69,7 +69,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reschedule', rescheduleRoutes); // Stripe webhook lives here: POST /api/payments/webhook
 app.use('/api/events', eventRoutes);
 app.use('/api/tickets', ticketRoutes);
-app.use('/api/chat', chatRoutes);
+
 app.use('/api/users', userRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/reviews', reviewRoutes);

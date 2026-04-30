@@ -19,28 +19,32 @@ export function Chatbot() {
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const newMsgs = [...messages, { role: 'user', text: inputText }];
+    const userText = inputText.trim();
+    const userTextLower = userText.toLowerCase();
+    
+    const newMsgs = [...messages, { role: 'user', text: userText }];
     setMessages(newMsgs);
     setInputText('');
-    setLoading(true);
 
-    try {
-      // API expects: { messages: [{role: 'user'|'assistant', content: string}] }
-      const formattedHistory = newMsgs.map(m => ({
-        role: m.role === 'model' ? 'assistant' : 'user',
-        content: m.text
-      }));
-
-      const res = await api.post('/chat', { messages: formattedHistory });
-      
-      // Backend returns { reply: string }
-      setMessages([...newMsgs, { role: 'model', text: res.data.reply }]);
-    } catch (err) {
-       console.error("Chat Error:", err);
-      setMessages([...newMsgs, { role: 'model', text: 'Sorry, I encountered an error connecting to Sportek servers.' }]);
-    } finally {
-      setLoading(false);
+    // Rule-based keyword matching
+    let replyText = "I'm a simple bot. Try asking about bookings, cancellations, payments, or owner accounts.";
+    
+    if (/(hi|hello|hey|good morning|good evening)/.test(userTextLower)) {
+      replyText = "Hi there! Welcome to Sportek. How can I help you today? You can ask me about bookings, facilities, events, or your account.";
+    } else if (/(book|booking|reserve|reservation)/.test(userTextLower)) {
+      replyText = "To make a booking, browse our Venues page, select a facility, choose an available time slot and complete payment via Stripe. You can view all your bookings in your dashboard under My Bookings.";
+    } else if (/(cancel|cancellation|refund)/.test(userTextLower)) {
+      replyText = "You can cancel a booking from your dashboard. If you cancel at least 2 hours before the start time, you will receive a full refund automatically via Stripe. Cancellations within 2 hours are not permitted.";
+    } else if (/(pay|payment|stripe)/.test(userTextLower)) {
+      replyText = "We use Stripe for secure payments. You can pay using any major credit or debit card. Payments are processed immediately upon booking.";
+    } else if (/(owner|property owner|list property|host)/.test(userTextLower)) {
+      replyText = "Want to list your sports facility? Click 'Become a Property Owner' on the homepage to apply. Once an Admin approves your application, you can manage properties, set pricing, and track bookings.";
     }
+
+    // Small delay to simulate thinking
+    setTimeout(() => {
+      setMessages(prev => [...prev, { role: 'model', text: replyText }]);
+    }, 500);
   };
 
   return (
