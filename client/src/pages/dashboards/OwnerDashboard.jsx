@@ -1266,3 +1266,274 @@ export function OwnerRescheduleRequests() {
     </div>
   );
 }
+
+// ─── Owner Feedback & Reports ─────────────────────────────────────────────
+export function OwnerFeedback() {
+  const [tab, setTab] = useState('reviews');
+  const [reviews, setReviews] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      try {
+        const [revRes, compRes] = await Promise.all([
+          api.get('/reviews/owner/my-properties'),
+          api.get('/complaints/owner/my-properties'),
+        ]);
+        setReviews(Array.isArray(revRes.data) ? revRes.data : []);
+        setComplaints(Array.isArray(compRes.data) ? compRes.data : []);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Failed to load feedback data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+  }, []);
+
+  const statusColors = {
+    open: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    under_review: 'bg-blue-100 text-blue-800 border-blue-200',
+    resolved: 'bg-green-100 text-green-800 border-green-200',
+    dismissed: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+
+  const renderStars = (rating) =>
+    Array(5).fill(0).map((_, i) => (
+      <svg key={i} className={`w-4 h-4 ${i < rating ? 'text-yellow-400' : 'text-slate-200'} fill-current`} viewBox="0 0 20 20">
+        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+      </svg>
+    ));
+
+  const timeAgo = (dateStr) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  // Build monthly rating data for the last 12 months
+  const buildMonthlyData = () => {
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        ratings: [],
+      });
+    }
+    reviews.forEach(r => {
+      const d = new Date(r.createdAt);
+      const entry = months.find(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      if (entry) entry.ratings.push(r.rating);
+    });
+    return months.map(m => ({
+      label: m.label,
+      avg: m.ratings.length ? (m.ratings.reduce((a, b) => a + b, 0) / m.ratings.length) : null,
+      count: m.ratings.length,
+    }));
+  };
+
+  const monthlyData = buildMonthlyData();
+  const maxAvg = 5;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Feedback & Reports</h1>
+        <p className="text-slate-500 mt-1">Customer reviews and complaints submitted for your properties.</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
+        {[
+          { key: 'reviews', label: `Reviews (${reviews.length})` },
+          { key: 'complaints', label: `Complaints (${complaints.length})` },
+          { key: 'report', label: '📊 Monthly Report' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === t.key ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4">{error}</div>
+      ) : tab === 'reviews' ? (
+        reviews.length === 0 ? (
+          <div className="text-center py-16 text-slate-500">
+            <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+            </svg>
+            <p className="font-medium">No reviews yet</p>
+            <p className="text-sm mt-1">Customer reviews will appear here once submitted.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {reviews.map(r => (
+              <Card key={r._id} className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">{r.customerId?.name || 'Customer'}</p>
+                      <p className="text-xs text-slate-400">{r.customerId?.email}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">{renderStars(r.rating)}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-primary-700 bg-primary-50 border border-primary-200 px-2 py-0.5 rounded-full truncate">
+                      {r.propertyId?.name || 'Property'}
+                    </span>
+                    <span className="text-xs text-slate-400 shrink-0">{timeAgo(r.createdAt)}</span>
+                  </div>
+                  {r.comment && (
+                    <p className="text-sm text-slate-600 italic bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      "{r.comment}"
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : (
+        complaints.length === 0 ? (
+          <div className="text-center py-16 text-slate-500">
+            <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p className="font-medium">No complaints yet</p>
+            <p className="text-sm mt-1">Customer complaints for your properties will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {complaints.map(c => (
+              <Card key={c._id} className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <p className="font-semibold text-slate-800">{c.subject}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-slate-500">
+                          by <span className="font-medium text-slate-700">{c.customerId?.name || 'Customer'}</span>
+                        </span>
+                        <span className="text-xs text-primary-700 bg-primary-50 border border-primary-200 px-2 py-0.5 rounded-full">
+                          {c.propertyId?.name || 'Property'}
+                        </span>
+                        <span className="text-xs text-slate-400">{timeAgo(c.createdAt)}</span>
+                      </div>
+                    </div>
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full border capitalize shrink-0 ${statusColors[c.status] || statusColors.open}`}>
+                      {c.status?.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 leading-relaxed">
+                    {c.description}
+                  </p>
+                  {c.adminNote && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-amber-700 mb-1">Admin Note</p>
+                      <p className="text-sm text-amber-800">{c.adminNote}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Monthly Report Tab */}
+      {!loading && !error && tab === 'report' && (
+        <div className="space-y-6">
+          {/* Summary cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="border border-slate-200">
+              <CardContent className="p-5 text-center">
+                <p className="text-3xl font-bold text-primary-600">
+                  {reviews.length > 0 ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : '—'}
+                </p>
+                <p className="text-sm text-slate-500 mt-1">Overall Avg Rating</p>
+                <div className="flex justify-center mt-2">{renderStars(Math.round(reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0))}</div>
+              </CardContent>
+            </Card>
+            <Card className="border border-slate-200">
+              <CardContent className="p-5 text-center">
+                <p className="text-3xl font-bold text-yellow-500">{reviews.length}</p>
+                <p className="text-sm text-slate-500 mt-1">Total Reviews</p>
+              </CardContent>
+            </Card>
+            <Card className="border border-slate-200">
+              <CardContent className="p-5 text-center">
+                <p className="text-3xl font-bold text-red-500">{complaints.length}</p>
+                <p className="text-sm text-slate-500 mt-1">Total Complaints</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Monthly Bar Chart */}
+          <Card className="border border-slate-200">
+            <CardHeader className="px-6 pt-5 pb-0">
+              <CardTitle className="text-base font-semibold text-slate-800">Average Review Rating — Last 12 Months</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              {reviews.length === 0 ? (
+                <p className="text-slate-400 text-sm text-center py-8">No review data to display yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {monthlyData.map((m) => (
+                    <div key={m.label} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-500 w-14 shrink-0 text-right">{m.label}</span>
+                      <div className="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                        {m.avg !== null ? (
+                          <div
+                            className="h-full rounded-full flex items-center justify-end pr-2 text-[10px] font-bold text-white transition-all"
+                            style={{
+                              width: `${(m.avg / maxAvg) * 100}%`,
+                              background: m.avg >= 4 ? '#22c55e' : m.avg >= 3 ? '#f59e0b' : '#ef4444'
+                            }}
+                          >
+                            {m.avg.toFixed(1)}
+                          </div>
+                        ) : (
+                          <div className="h-full flex items-center pl-3 text-[10px] text-slate-400">No data</div>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-400 w-16 shrink-0">
+                        {m.count > 0 ? `${m.count} review${m.count !== 1 ? 's' : ''}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                  {/* Legend */}
+                  <div className="flex gap-4 pt-2 border-t border-slate-100 mt-4">
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block"></span>4–5 ★ Excellent</span>
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-3 h-3 rounded-sm bg-amber-500 inline-block"></span>3–4 ★ Average</span>
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block"></span>Below 3 ★ Poor</span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

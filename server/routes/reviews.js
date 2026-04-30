@@ -3,6 +3,22 @@ const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const Review = require('../models/Review');
 const Booking = require('../models/Booking');
+const Property = require('../models/Property');
+
+// GET /api/reviews/owner/my-properties — propertyOwner only, returns all reviews for their properties
+router.get('/owner/my-properties', protect, authorize('propertyOwner'), async (req, res) => {
+  try {
+    const properties = await Property.find({ ownerId: req.user._id }, '_id');
+    const propertyIds = properties.map(p => p._id);
+    const reviews = await Review.find({ propertyId: { $in: propertyIds } })
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name')
+      .sort('-createdAt');
+    res.json(reviews);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 // POST /api/reviews — authenticated customer only, checks booking exists and belongs to customer, checks booking status is 'completed', checks no duplicate review exists for that bookingId
 router.post('/', protect, authorize('customer'), async (req, res) => {
