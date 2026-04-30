@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../../lib/axios';
 import useAuthStore from '../../store/useAuthStore';
@@ -10,7 +10,7 @@ import CreateVenueModal from '../../components/ui/CreateVenueModal';
 import CreateEventModal from '../../components/ui/CreateEventModal';
 import {
   CalendarDays, MapPin, Ticket, BookOpen, LogOut,
-  Plus, Trash2, Edit2, Users, TrendingUp, Building2
+  Plus, Trash2, Edit2, Users, TrendingUp, Building2, ImagePlus, X as XIcon
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -25,6 +25,47 @@ function EventsSection() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [deleting, setDeleting] = useState(null);
+
+  // ── Hero image change state ──
+  const [heroModalOpen, setHeroModalOpen]   = useState(false);
+  const [heroUrl, setHeroUrl]               = useState('');
+  const [heroPreview, setHeroPreview]       = useState('');
+  const [heroSaving, setHeroSaving]         = useState(false);
+  const [heroSuccess, setHeroSuccess]       = useState(false);
+
+  // Load existing hero image URL when modal opens
+  const openHeroModal = async () => {
+    setHeroSuccess(false);
+    try {
+      const r = await api.get('/settings/eventhub-hero');
+      setHeroUrl(r.data.value || '');
+      setHeroPreview(r.data.value || '');
+    } catch { setHeroUrl(''); setHeroPreview(''); }
+    setHeroModalOpen(true);
+  };
+
+  // Handle local file upload — convert to base64 data URL
+  const handleHeroFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setHeroUrl(ev.target.result);
+      setHeroPreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveHeroImage = async () => {
+    if (!heroUrl.trim()) return;
+    setHeroSaving(true);
+    try {
+      await api.put('/settings/eventhub-hero', { value: heroUrl.trim() });
+      setHeroSuccess(true);
+      setTimeout(() => { setHeroModalOpen(false); setHeroSuccess(false); }, 1200);
+    } catch { alert('Failed to save hero image.'); }
+    finally { setHeroSaving(false); }
+  };
 
   const fetchEvents = () => {
     setLoading(true);
@@ -47,10 +88,96 @@ function EventsSection() {
           <h2 className="text-2xl font-bold text-slate-900">Events</h2>
           <p className="text-slate-500 text-sm mt-1">Create and manage all platform events</p>
         </div>
-        <Button onClick={() => setModal('create')}>
-          <Plus className="w-4 h-4 mr-2" /> Create Event
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Change EventHub hero background button */}
+          <button
+            onClick={openHeroModal}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-slate-300 text-slate-700 bg-white rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-colors shadow-sm">
+            <ImagePlus className="w-4 h-4" />
+            EventHub Banner
+          </button>
+          <Button onClick={() => setModal('create')}>
+            <Plus className="w-4 h-4 mr-2" /> Create Event
+          </Button>
+        </div>
       </div>
+
+      {/* ── Hero image modal ── */}
+      {heroModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 relative">
+            {/* Close */}
+            <button onClick={() => setHeroModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors">
+              <XIcon className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <ImagePlus className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg">Change EventHub Banner</h3>
+                <p className="text-slate-500 text-xs">Updates the hero background on the public events page</p>
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div className="w-full h-44 rounded-xl overflow-hidden bg-slate-100 mb-5 border border-slate-200">
+              {heroPreview ? (
+                <img src={heroPreview} alt="Preview" className="w-full h-full object-cover object-center"
+                  onError={() => setHeroPreview('')} />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                  <ImagePlus className="w-10 h-10 mb-2 opacity-40" />
+                  <p className="text-sm">Image preview will appear here</p>
+                </div>
+              )}
+            </div>
+
+            {/* URL input */}
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Image URL</label>
+            <input
+              type="url"
+              placeholder="https://example.com/image.jpg"
+              value={heroUrl.startsWith('data:') ? '' : heroUrl}
+              onChange={e => { setHeroUrl(e.target.value); setHeroPreview(e.target.value); }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+            />
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-400 font-medium">or upload a file</span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            {/* File picker */}
+            <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-slate-300 rounded-xl text-sm text-slate-500 cursor-pointer hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors mb-5">
+              <ImagePlus className="w-4 h-4" />
+              Choose image from device
+              <input type="file" accept="image/*" className="hidden" onChange={handleHeroFileChange} />
+            </label>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button onClick={() => setHeroModalOpen(false)}
+                className="flex-1 py-2.5 border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={saveHeroImage}
+                disabled={heroSaving || !heroUrl.trim()}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-colors ${
+                  heroSuccess
+                    ? 'bg-emerald-500'
+                    : 'bg-[#1a2e4a] hover:bg-[#243d60] disabled:opacity-50'
+                }`}>
+                {heroSuccess ? '✓ Saved!' : heroSaving ? 'Saving…' : 'Save Banner'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>
@@ -105,7 +232,7 @@ function EventsSection() {
                     <div className="flex flex-wrap gap-1">
                       {e.ticketCategories.map((c, i) => (
                         <span key={i} className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
-                          {c.name} ${c.price}
+                          {c.name} Rs. {c.price}
                         </span>
                       ))}
                     </div>
@@ -318,7 +445,7 @@ function TicketInventorySection() {
                   <div className="flex items-center gap-6 shrink-0">
                     <div className="text-center">
                       <p className="text-xs text-slate-500">Revenue</p>
-                      <p className="text-base font-bold text-blue-600">${eventRevenue.toFixed(2)}</p>
+                      <p className="text-base font-bold text-blue-600">Rs. {eventRevenue.toFixed(2)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-xs text-slate-500">Sold</p>
@@ -369,7 +496,7 @@ function TicketInventorySection() {
                             return (
                               <tr key={ci} className="hover:bg-slate-50/60">
                                 <td className="py-2.5 pr-4 font-semibold text-slate-800">{c.name || `Category ${ci + 1}`}</td>
-                                <td className="py-2.5 text-right text-slate-600">${c.price}</td>
+                                <td className="py-2.5 text-right text-slate-600">Rs. {c.price}</td>
                                 <td className="py-2.5 text-right text-slate-600">{catTotal}</td>
                                 <td className="py-2.5 text-right font-semibold text-emerald-600">{catSold}</td>
                                 <td className="py-2.5 text-right">
@@ -377,7 +504,7 @@ function TicketInventorySection() {
                                     {catRem === 0 ? 'Sold Out' : catRem}
                                   </span>
                                 </td>
-                                <td className="py-2.5 text-right font-semibold text-blue-600">${catRev.toFixed(2)}</td>
+                                <td className="py-2.5 text-right font-semibold text-blue-600">Rs. {catRev.toFixed(2)}</td>
                                 <td className="py-2.5 pl-4 w-32">
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -518,8 +645,8 @@ function TicketBookingsSection() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center font-semibold text-slate-700">{qty}</td>
-                    <td className="px-4 py-3 text-slate-600">${t.price}</td>
-                    <td className="px-4 py-3 font-bold text-slate-900">${total.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-slate-600">Rs. {t.price}</td>
+                    <td className="px-4 py-3 font-bold text-slate-900">Rs. {total.toFixed(2)}</td>
                     <td className="px-4 py-3">
                       <Badge variant={PAYMENT_VARIANT[t.paymentStatus] || 'success'}>
                         {t.paymentStatus || 'paid'}

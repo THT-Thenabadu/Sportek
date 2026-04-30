@@ -223,7 +223,7 @@ function TicketModal({ event, onClose }) {
                       </p>
                     </div>
                     <div className="text-right shrink-0 ml-4">
-                      <p className="text-lg font-bold text-blue-600">${cat.price}</p>
+                      <p className="text-lg font-bold text-blue-600">Rs. {cat.price}</p>
                       {!soldOut && <ChevronRight className="w-4 h-4 text-slate-400 ml-auto mt-1" />}
                     </div>
                   </button>
@@ -238,7 +238,7 @@ function TicketModal({ event, onClose }) {
                 <button onClick={() => { setSelectedCat(null); }}
                   className="text-sm text-blue-600 hover:underline">← Back</button>
                 <span className="text-sm text-slate-500">
-                  1× {selectedCat.name} — ${selectedCat.price}
+                  1× {selectedCat.name} — Rs. {selectedCat.price}
                 </span>
               </div>
               <Elements stripe={stripePromise}>
@@ -267,6 +267,17 @@ export default function EventHub() {
   const [searchInput, setSearchInput] = useState('');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [activeType, setActiveType] = useState('all');
+
+  // Admin-configurable hero background image
+  const DEFAULT_HERO = 'https://thumbs.dreamstime.com/b/concert-atmosphere-live-music-event-dark-energetic-vibe-vibrant-stage-lights-laser-beams-packed-crowd-audience-participation-381121402.jpg';
+  const [heroBg, setHeroBg] = useState(DEFAULT_HERO);
+
+  useEffect(() => {
+    // Load hero image setting
+    api.get('/settings/eventhub-hero')
+      .then(r => { if (r.data.value) setHeroBg(r.data.value); })
+      .catch(() => {}); // silently fall back to default
+  }, []);
 
   useEffect(() => {
     api.get('/events')
@@ -339,10 +350,10 @@ export default function EventHub() {
 
       {/* ── Hero ── */}
       <section style={{ height: '100vh' }} className="relative flex items-center justify-center overflow-hidden">
-        {/* Background image */}
+        {/* Background image — uses admin-configurable URL */}
         <img
-          src="https://thumbs.dreamstime.com/b/concert-atmosphere-live-music-event-dark-energetic-vibe-vibrant-stage-lights-laser-beams-packed-crowd-audience-participation-381121402.jpg"
-          alt="Concert crowd"
+          src={heroBg}
+          alt="Event hero"
           className="absolute inset-0 w-full h-full object-cover object-center"
         />
         {/* Dark overlay */}

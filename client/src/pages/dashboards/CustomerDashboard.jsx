@@ -489,7 +489,7 @@ export function CustomerTickets() {
             </div>
             <div className="flex justify-between border-t pt-4">
               <span className="text-slate-400">Amount Paid</span>
-              <span className="font-bold text-slate-900 text-base">${Number(selectedTicket.price).toFixed(2)}</span>
+              <span className="font-bold text-slate-900 text-base">Rs. {Number(selectedTicket.price).toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Status</span>
@@ -555,7 +555,7 @@ export function CustomerTickets() {
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <span className="text-xs text-slate-400 font-mono">#{t._id.slice(-6).toUpperCase()}</span>
-                <span className="font-bold text-slate-800">${Number(t.price).toFixed(2)}</span>
+                <span className="font-bold text-slate-800">Rs. {Number(t.price).toFixed(2)}</span>
               </div>
             </button>
           ))}

@@ -9,8 +9,8 @@ router.get('/:eventId/status', async (req, res) => {
   try {
     const { eventId } = req.params;
 
-    // Clean up abandoned pending tickets older than 10 minutes
-    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    // Clean up abandoned pending tickets older than 15 minutes
+    const tenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
     await Ticket.deleteMany({
       eventId,
       paymentStatus: 'pending',

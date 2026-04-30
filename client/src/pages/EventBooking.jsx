@@ -143,7 +143,7 @@ export default function EventBooking() {
           </p>
           <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-600 mb-6 space-y-1 text-left">
             <p><span className="font-semibold">Category:</span> {cat.name}</p>
-            <p><span className="font-semibold">Price:</span> ${cat.price}</p>
+            <p><span className="font-semibold">Price:</span> Rs. {cat.price}</p>
             <p><span className="font-semibold">Date:</span> {new Date(event.date).toLocaleDateString()}</p>
           </div>
           <Link to="/dashboard/tickets"
@@ -245,7 +245,7 @@ export default function EventBooking() {
                   </div>
                   <div className="flex justify-between text-sm border-t pt-2 mt-1">
                     <span className="font-bold text-slate-900">Total</span>
-                    <span className="font-bold text-[#1a2e4a] text-base">${cat.price}</span>
+                    <span className="font-bold text-[#1a2e4a] text-base">Rs. {cat.price}</span>
                   </div>
                 </div>
 

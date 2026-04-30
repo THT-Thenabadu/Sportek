@@ -22,6 +22,7 @@ const warningRoutes = require('./routes/warnings');
 const rescheduleRoutes = require('./routes/rescheduleRoutes');
 const venueRoutes = require('./routes/venueRoutes');
 const seatRoutes  = require('./routes/seatRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 connectDB();
 
@@ -59,7 +60,7 @@ app.use((req, res, next) => {
   if (req.originalUrl === '/api/payments/webhook') {
     return next();
   }
-  express.json()(req, res, next);
+  express.json({ limit: '15mb' })(req, res, next);
 });
 
 app.use('/api/properties', propertyRoutes);
@@ -77,6 +78,7 @@ app.use('/api/complaints', complaintRoutes);
 app.use('/api/warnings', warningRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/seats',  seatRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ message: 'Sportek API is running' });

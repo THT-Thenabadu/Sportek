@@ -1,6 +1,6 @@
 // In-memory seat lock store: key = "eventId_seatId", value = { userId, expiresAt }
 const seatLocks = new Map();
-const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const LOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 const lockSeat = (eventId, seatId, userId) => {
   const key = `${eventId}_${seatId}`;
