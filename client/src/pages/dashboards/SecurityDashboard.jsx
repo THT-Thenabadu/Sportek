@@ -14,6 +14,7 @@ function SecurityScanner() {
   const [tokenResult, setTokenResult] = useState(null);
   const [bookingDetails, setBookingDetails] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [errorType, setErrorType] = useState('error'); // 'error' | 'early'
   const [scanning, setScanning] = useState(true);
   const videoRef = useRef(null);
   const readerRef = useRef(null);
@@ -34,7 +35,10 @@ function SecurityScanner() {
       const res = await api.post('/bookings/scan-qr', { qrData: text });
       setBookingDetails(res.data.booking);
     } catch (err) {
-      setErrorMsg(err.response?.data?.message || 'Invalid or unknown booking QR code');
+      const data = err.response?.data;
+      const isEarly = data?.validFrom != null;
+      setErrorType(isEarly ? 'early' : 'error');
+      setErrorMsg(data?.message || 'Invalid or unknown booking QR code');
       // Restart scanner on error
       setScanning(true);
     } finally {
@@ -78,6 +82,7 @@ function SecurityScanner() {
   const handleScanAnother = () => {
     setBookingDetails(null);
     setErrorMsg('');
+    setErrorType('error');
     setTokenInput('');
     setTokenResult(null);
     setScanning(true);
@@ -95,7 +100,9 @@ function SecurityScanner() {
         controlsRef.current = null;
       }
     } catch (err) {
-      setTokenResult({ success: false, message: err.response?.data?.message || 'Invalid token' });
+      const data = err.response?.data;
+      const isEarly = data?.validFrom != null;
+      setTokenResult({ success: false, early: isEarly, message: data?.message || 'Invalid token' });
     }
   };
 
@@ -182,9 +189,16 @@ function SecurityScanner() {
             )}
 
             {errorMsg && (
-              <div className="absolute bottom-4 left-4 right-4 p-3 bg-red-600/90 text-white rounded-lg flex items-center gap-2 text-sm backdrop-blur-sm">
-                <XCircle className="w-4 h-4 shrink-0" />
-                {errorMsg}
+              <div className={`absolute bottom-4 left-4 right-4 p-3 rounded-lg flex items-start gap-2 text-sm backdrop-blur-sm ${
+                errorType === 'early'
+                  ? 'bg-amber-500/90 text-white'
+                  : 'bg-red-600/90 text-white'
+              }`}>
+                {errorType === 'early'
+                  ? <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                }
+                <span>{errorMsg}</span>
               </div>
             )}
           </div>
@@ -217,13 +231,21 @@ function SecurityScanner() {
             </button>
 
             {tokenResult && (
-              <div className={`mt-4 p-3 rounded-lg border text-sm ${tokenResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              <div className={`mt-4 p-3 rounded-lg border text-sm ${
+                tokenResult.success
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : tokenResult.early
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}>
                 {tokenResult.success ? (
                   <div className="space-y-1">
                     <p className="font-semibold flex items-center gap-1"><CheckCircle className="w-4 h-4" /> Checked In</p>
                     <p>{tokenResult.booking.customerId?.name}</p>
                     <p className="text-xs text-slate-500">{tokenResult.booking.timeSlot?.start} – {tokenResult.booking.timeSlot?.end}</p>
                   </div>
+                ) : tokenResult.early ? (
+                  <p className="flex items-start gap-1"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {tokenResult.message}</p>
                 ) : (
                   <p className="flex items-center gap-1"><XCircle className="w-4 h-4" /> {tokenResult.message}</p>
                 )}

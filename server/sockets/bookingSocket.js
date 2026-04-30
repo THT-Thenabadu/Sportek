@@ -77,6 +77,7 @@ const initSocket = (server) => {
 
       const expiresAt = new Date(Date.now() + 120000);
       lockedSlots.set(slotKey, { userId, timeoutId, expiresAt });
+      console.log(`[socket lock_slot] stored key="${slotKey}" userId="${userId}"`);
 
       // Build payload and broadcast
       const payload = { propertyId, date, timeSlotStart, userId, expiresAt };

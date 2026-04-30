@@ -116,8 +116,39 @@ const createPaymentIntent = async (req, res) => {
     const slotKey = `${propertyId}_${date}_${timeSlotStart}`;
     const lockedData = lockedSlots.get(slotKey);
 
-    if (!lockedData || lockedData.userId !== req.user._id.toString()) {
-      return res.status(400).json({ message: 'Slot not properly locked by you.' });
+    console.log(`[createPaymentIntent] slotKey="${slotKey}" userId="${req.user._id}" lockedData=`, lockedData ? `userId=${lockedData.userId}` : 'NOT FOUND');
+    console.log(`[createPaymentIntent] All current locks:`, [...lockedSlots.keys()]);
+
+    if (!lockedData) {
+      // Lock missing — server may have restarted or the socket lock was lost.
+      // Check the slot is still free in DB (ignore pending bookings by this same user — retries).
+      const targetDate = new Date(date);
+      targetDate.setHours(0, 0, 0, 0);
+      const conflict = await Booking.findOne({
+        propertyId,
+        date: targetDate,
+        'timeSlot.start': timeSlotStart,
+        status: { $in: ['booked', 'active', 'pending_onsite'] },
+        // A pending booking by THIS user is just a retry — don't block it
+        customerId: { $ne: req.user._id },
+      });
+      if (conflict) {
+        return res.status(400).json({ message: 'This slot is no longer available.' });
+      }
+      // Also clean up any stale pending booking this user left from a previous attempt
+      await Booking.deleteMany({
+        propertyId,
+        date: targetDate,
+        'timeSlot.start': timeSlotStart,
+        customerId: req.user._id,
+        status: 'pending',
+      });
+      // Re-acquire the lock
+      const expiresAt = new Date(Date.now() + 120000);
+      const timeoutId = setTimeout(() => { lockedSlots.delete(slotKey); }, 120000);
+      lockedSlots.set(slotKey, { userId: req.user._id.toString(), timeoutId, expiresAt });
+    } else if (lockedData.userId !== req.user._id.toString()) {
+      return res.status(400).json({ message: 'This slot is currently held by another user.' });
     }
 
     const property = await Property.findById(propertyId);
@@ -138,7 +169,7 @@ const createPaymentIntent = async (req, res) => {
       status: 'pending',
       selectedAssets: selectedAssets || [],
       totalAmount,
-      lockExpiresAt: lockedData.expiresAt
+      lockExpiresAt: lockedSlots.get(slotKey)?.expiresAt
     });
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -453,10 +484,25 @@ const scanQR = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
-    // Not expired
+    // Time window validation — parse as UTC to match how booking.date is stored
     const datePart = booking.date.toISOString().split('T')[0];
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00`);
-    if (endDateTime < new Date()) {
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
+    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const now = new Date();
+
+    // Valid from 30 minutes before the booking start
+    const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
+
+    if (now < validFrom) {
+      const diffMins = Math.ceil((validFrom - now) / 60000);
+      return res.status(400).json({
+        message: `QR not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        validFrom: validFrom.toISOString(),
+        bookingStart: startDateTime.toISOString(),
+      });
+    }
+
+    if (endDateTime < now) {
       return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
     }
 
@@ -500,9 +546,25 @@ const checkinByToken = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
+    // Time window validation — parse as UTC to match how booking.date is stored
     const datePart = booking.date.toISOString().split('T')[0];
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00`);
-    if (endDateTime < new Date()) {
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
+    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const now = new Date();
+
+    // Valid from 30 minutes before the booking start
+    const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
+
+    if (now < validFrom) {
+      const diffMins = Math.ceil((validFrom - now) / 60000);
+      return res.status(400).json({
+        message: `Token not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        validFrom: validFrom.toISOString(),
+        bookingStart: startDateTime.toISOString(),
+      });
+    }
+
+    if (endDateTime < now) {
       return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
     }
 

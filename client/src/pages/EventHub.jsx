@@ -72,7 +72,7 @@ function EventCard({ event }) {
           ? <img src={event.bannerImage} alt={event.name} className="w-full h-full object-cover" />
           : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">No Image</div>
         }
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/50 to-transparent" />
         {event.eventType && (
           <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${TYPE_COLORS[event.eventType] || TYPE_COLORS.other}`}>
             {event.eventType}
