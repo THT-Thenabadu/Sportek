@@ -3,7 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../lib/axios';
 import useAuthStore from '../store/useAuthStore';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+<<<<<<< Updated upstream
 import { ArrowLeft, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket } from 'lucide-react';
+=======
+import { ArrowLeft, CreditCard, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket, AlertTriangle } from 'lucide-react';
+>>>>>>> Stashed changes
 import QRCode from 'qrcode';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
@@ -136,8 +140,52 @@ export default function EventPayment() {
   const [error, setError] = useState('');
 
 
+<<<<<<< Updated upstream
 
   // We will pass these directly to the Elements provider now
+=======
+  // ── 15-minute payment hold timer ──
+  const [holdSecsLeft, setHoldSecsLeft] = useState(null);
+  const holdTimerRef = useRef(null);
+
+  // On mount: read the shared expiry from sessionStorage (set by seat selection page)
+  useEffect(() => {
+    const raw = sessionStorage.getItem(`seat_hold_expires_${eventId}`);
+    if (!raw) return;
+    const expiresAt = parseInt(raw, 10);
+    const secsLeft = Math.floor((expiresAt - Date.now()) / 1000);
+    if (secsLeft <= 0) {
+      // Already expired before the page even loaded
+      sessionStorage.removeItem(`seat_hold_expires_${eventId}`);
+      sessionStorage.removeItem(`event_seats_${eventId}`);
+      api.post(`/seats/${eventId}/unlock`, {}).catch(() => {});
+      navigate(`/events/${eventId}/seats`, { state: { expired: true } });
+      return;
+    }
+    setHoldSecsLeft(secsLeft);
+    holdTimerRef.current = setInterval(() => {
+      setHoldSecsLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(holdTimerRef.current);
+          holdTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (holdTimerRef.current) clearInterval(holdTimerRef.current); };
+  }, [eventId]);
+
+  // When payment timer hits 0, unlock seats and redirect
+  useEffect(() => {
+    if (holdSecsLeft !== 0) return;
+    sessionStorage.removeItem(`seat_hold_expires_${eventId}`);
+    sessionStorage.removeItem(`event_seats_${eventId}`);
+    api.post(`/seats/${eventId}/unlock`, {}).catch(() => {});
+    navigate(`/events/${eventId}/seats`, { state: { expired: true } });
+  }, [holdSecsLeft, eventId, navigate]);
+
+>>>>>>> Stashed changes
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
     const stored = sessionStorage.getItem(`event_seats_${eventId}`);
@@ -153,10 +201,43 @@ export default function EventPayment() {
   const serviceCharge = bookingData ? bookingData.totalAmount * 0.05 : 0;
   const grandTotal = bookingData ? bookingData.totalAmount + serviceCharge : 0;
 
+<<<<<<< Updated upstream
   const handlePaySuccess = (newTicketId) => {
     setTicketId(newTicketId);
     sessionStorage.removeItem(`event_seats_${eventId}`);
     setSuccess(true);
+=======
+  const handlePay = async (e) => {
+    e.preventDefault();
+    if (!cardName.trim()) { setError('Please enter cardholder name.'); return; }
+    setError('');
+    setProcessing(true);
+    try {
+      const allSeats = bookingData.seats;
+      const firstCat = allSeats[0]?.category;
+      // Step 1: create ticket (pending)
+      const res = await api.post('/tickets/purchase', {
+        eventId,
+        category: firstCat,
+        tier: firstCat,
+        seats: allSeats,
+      });
+      const newTicketId = res.data.ticketId;
+
+      // Step 2: confirm payment (marks as paid + syncs soldQuantity)
+      await api.patch(`/tickets/${newTicketId}/confirm-payment`);
+
+      setTicketId(newTicketId);
+      sessionStorage.removeItem(`event_seats_${eventId}`);
+      sessionStorage.removeItem(`seat_hold_expires_${eventId}`);
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+      setSuccess(true);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Payment failed. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+>>>>>>> Stashed changes
   };
 
   if (loading) return (
@@ -237,6 +318,48 @@ export default function EventPayment() {
             className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm mb-4 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back to Ticket Selection
           </button>
+
+          {/* ── 15-minute payment countdown banner ── */}
+          {holdSecsLeft !== null && (() => {
+            const mins = Math.floor(holdSecsLeft / 60);
+            const secs = holdSecsLeft % 60;
+            const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+            const isUrgent  = holdSecsLeft <= 120; // last 2 minutes
+            return (
+              <div className={`mb-6 rounded-2xl border-2 px-5 py-3 flex items-center justify-between gap-4 ${
+                isUrgent
+                  ? 'bg-orange-50 border-orange-400 animate-pulse'
+                  : 'bg-amber-50 border-amber-300'
+              }`}>
+                <div className="flex items-center gap-3">
+                  {isUrgent
+                    ? <AlertTriangle className="w-5 h-5 flex-shrink-0 text-orange-500" />
+                    : <Clock className="w-5 h-5 flex-shrink-0 text-amber-500" />
+                  }
+                  <div>
+                    <p className={`font-bold text-sm ${
+                      isUrgent ? 'text-orange-700' : 'text-amber-800'
+                    }`}>
+                      {isUrgent
+                        ? 'Hurry! Complete payment before your seats are released.'
+                        : 'Complete your payment within 15 minutes to confirm your seats'
+                      }
+                    </p>
+                    <p className={`text-xs mt-0.5 ${
+                      isUrgent ? 'text-orange-500' : 'text-amber-600'
+                    }`}>
+                      Your selected seats are held exclusively for you until the timer runs out.
+                    </p>
+                  </div>
+                </div>
+                <div className={`text-2xl font-black font-mono flex-shrink-0 ${
+                  isUrgent ? 'text-orange-600' : 'text-amber-600'
+                }`}>
+                  {timeStr}
+                </div>
+              </div>
+            );
+          })()}
 
           <h1 className="text-3xl font-bold text-slate-900 mb-6">Payment</h1>
 
