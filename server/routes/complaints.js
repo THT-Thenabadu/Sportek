@@ -3,6 +3,22 @@ const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const Complaint = require('../models/Complaint');
 const Warning = require('../models/Warning');
+const Property = require('../models/Property');
+
+// GET /api/complaints/owner/my-properties — propertyOwner only, returns all complaints for their properties
+router.get('/owner/my-properties', protect, authorize('propertyOwner'), async (req, res) => {
+  try {
+    const properties = await Property.find({ ownerId: req.user._id }, '_id');
+    const propertyIds = properties.map(p => p._id);
+    const complaints = await Complaint.find({ propertyId: { $in: propertyIds } })
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name')
+      .sort('-createdAt');
+    res.json(complaints);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 // POST /api/complaints — authenticated customer only
 router.post('/', protect, authorize('customer'), async (req, res) => {

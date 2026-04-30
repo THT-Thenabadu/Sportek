@@ -45,6 +45,7 @@ function Sidebar() {
         { name: 'Assets',        path: '/dashboard/assets',     icon: Settings },
         { name: 'Warnings',      path: '/dashboard/warnings',   icon: AlertCircle, badge: unreadWarnings },
         { name: 'Reschedule Requests', path: '/dashboard/reschedule', icon: FileText },
+        { name: 'Feedback & Reports', path: '/dashboard/feedback', icon: Star },
         { name: 'My Bookings',   path: '/dashboard/bookings',   icon: Calendar },
         { name: 'My Tickets',    path: '/dashboard/tickets',    icon: Ticket   },
         { name: 'Security Dashboard Credentials', path: '/dashboard/security-credentials', icon: ScanLine },

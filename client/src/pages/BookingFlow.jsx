@@ -426,25 +426,36 @@ function BookingFlowInner() {
                     const isPending = s.state === 'Pending';
                     const isBlocked = s.state === 'Blocked';
 
-                    // Calculate remaining seconds for Pending slots (shown to ALL users)
+                    // Calculate remaining seconds for Pending slots (re-evaluates each tick)
                     let pendingSecsLeft = null;
                     if (isPending && slotLockInfo[s.start]) {
+                      // reference tick so React re-renders this every second
+                      void tick;
                       pendingSecsLeft = Math.max(0, Math.round((new Date(slotLockInfo[s.start]) - Date.now()) / 1000));
                     }
 
-                    let cls = 'p-3 rounded-lg border text-center font-medium text-sm transition-all ';
-                    if (isBooked) cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
-                    else if (isBlocked) cls += 'bg-red-50 text-red-400 border-red-200 cursor-not-allowed';
-                    else if (isPending) cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
-                    else cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
+                    let cls = 'p-3 rounded-lg border-2 text-center font-medium text-sm transition-all select-none ';
+                    if (isBooked) cls += 'bg-slate-100 text-slate-500 border-slate-300 cursor-not-allowed';
+                    else if (isBlocked) cls += 'bg-red-50 text-red-500 border-red-300 cursor-not-allowed';
+                    else if (isPending) cls += 'bg-amber-50 text-amber-700 border-amber-300 cursor-not-allowed';
+                    else cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 hover:border-primary-400 cursor-pointer';
 
                     return (
                       <div key={i} className={cls} onClick={() => handleSelectSlot(s)}>
-                        <div>{s.start} – {s.end}</div>
-                        {isBooked && <div className="text-xs mt-0.5 opacity-70 font-semibold">Booked</div>}
-                        {isBlocked && <div className="text-xs mt-0.5 opacity-70 font-semibold text-red-600">Blocked</div>}
+                        <div className="font-semibold">{s.start} – {s.end}</div>
+                        {isBooked && (
+                          <div className="text-xs mt-1 font-bold tracking-wide text-slate-500 flex items-center justify-center gap-1">
+                            <span>●</span> Booked
+                          </div>
+                        )}
+                        {isBlocked && (
+                          <div className="text-xs mt-1 font-bold tracking-wide text-red-500 flex items-center justify-center gap-1">
+                            <span>⊘</span> Blocked
+                          </div>
+                        )}
                         {isPending && (
-                          <div className="text-xs mt-0.5 font-semibold">
+                          <div className="text-xs mt-1 font-bold text-amber-700 flex items-center justify-center gap-1">
+                            <span>⏳</span>
                             {pendingSecsLeft !== null
                               ? `Held · ${Math.floor(pendingSecsLeft / 60)}:${String(pendingSecsLeft % 60).padStart(2, '0')}`
                               : 'Held'

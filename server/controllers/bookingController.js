@@ -31,15 +31,23 @@ const getAvailableSlots = async (req, res) => {
   try {
     const propertyId = req.params.propertyId;
 
-    // Requirements: "customers can only book for the current day"
-    // Though for general fetching we can accept a date, we'll enforce today logic.
-    let targetDate = req.query.date ? new Date(req.query.date) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
+    // Parse date safely in local timezone (new Date('YYYY-MM-DD') parses as UTC midnight,
+    // which shifts the day in +05:30 timezones — we want local midnight instead)
+    let targetDate;
+    if (req.query.date) {
+      const [y, m, d] = req.query.date.split('-').map(Number);
+      targetDate = new Date(y, m - 1, d, 0, 0, 0, 0); // local midnight
+    } else {
+      targetDate = new Date();
+      targetDate.setHours(0, 0, 0, 0);
+    }
 
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
 
-    const dateString = targetDate.toISOString().split('T')[0];
+    // Use local date string for lock-key lookup (format: YYYY-MM-DD)
+    const pad = n => String(n).padStart(2, '0');
+    const dateString = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}`;
 
     const property = await Property.findById(propertyId);
     if (!property) {
@@ -53,11 +61,14 @@ const getAvailableSlots = async (req, res) => {
       property.slotDurationMinutes
     );
 
-    // Fetch existing DB bookings for the date
+    // Fetch existing DB bookings for the date — use a range to avoid UTC/local issues
+    const dayStart = new Date(targetDate); // already local midnight
+    const dayEnd = new Date(targetDate);
+    dayEnd.setHours(23, 59, 59, 999);
     const existingBookings = await Booking.find({
       propertyId,
-      date: targetDate,
-      status: { $in: ['booked', 'completed'] }
+      date: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ['booked', 'completed', 'active', 'pending_onsite'] }
     });
     const bookedStarts = existingBookings.map(b => b.timeSlot.start);
 
