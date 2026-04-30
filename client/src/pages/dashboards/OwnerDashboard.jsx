@@ -137,11 +137,11 @@ function ManageSlotsModal({ property, onClose }) {
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
-          <input 
-            type="date" 
+          <input
+            type="date"
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            value={selectedDate} 
-            onChange={e => setSelectedDate(e.target.value)} 
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
           />
         </div>
 
@@ -159,11 +159,10 @@ function ManageSlotsModal({ property, onClose }) {
                   key={s.start}
                   disabled={isBooked}
                   onClick={() => toggleBlock(s)}
-                  className={`p-3 text-sm font-medium rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${
-                    isBooked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' :
-                    isBlocked ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' :
-                    'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                  }`}
+                  className={`p-3 text-sm font-medium rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isBooked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' :
+                      isBlocked ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' :
+                        'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                    }`}
                 >
                   <span>{s.start} - {s.end}</span>
                   <span className="text-xs opacity-75">{isBooked ? 'Booked' : isBlocked ? 'Blocked' : 'Available'}</span>
@@ -305,7 +304,7 @@ function BundleAssetsModal({ property, onClose, onUpdated }) {
         <div className="p-6 overflow-y-auto flex-1">
           <p className="text-sm text-slate-600 mb-4">Select the assets you want to display on the <strong>{property.name}</strong> venue page.</p>
           {error && <div className="p-3 mb-4 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">{error}</div>}
-          
+
           {loading ? (
             <p className="text-center text-slate-500 py-4">Loading assets...</p>
           ) : assets.length === 0 ? (
@@ -352,7 +351,7 @@ export function OwnerProperties() {
 
   useEffect(() => {
     api.get('/properties/my-properties').then(res => setProperties(res.data)).catch(console.error);
-    
+
     // Fetch owner application to check for new security officer credentials
     api.get('/applications/my-application').then(res => {
       const app = res.data;
@@ -449,18 +448,18 @@ export function OwnerProperties() {
 
       {showModal && <AddPropertyModal onClose={() => setShowModal(false)} onAdded={handleAdded} />}
       {editingProperty && (
-        <EditPropertyModal 
-          property={editingProperty} 
-          onClose={() => setEditingProperty(null)} 
+        <EditPropertyModal
+          property={editingProperty}
+          onClose={() => setEditingProperty(null)}
           onUpdated={(updated) => {
             setProperties(prev => prev.map(p => p._id === updated._id ? updated : p));
-          }} 
+          }}
         />
       )}
       {slotProperty && (
-        <ManageSlotsModal 
-          property={slotProperty} 
-          onClose={() => setSlotProperty(null)} 
+        <ManageSlotsModal
+          property={slotProperty}
+          onClose={() => setSlotProperty(null)}
         />
       )}
       {bundleProperty && (
@@ -500,9 +499,9 @@ export function OwnerProperties() {
                   <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setBundleProperty(p)}>Bundle Assets</Button>
                   <Button size="sm" variant="outline" className="border-primary-200 text-primary-700 hover:bg-primary-50" onClick={() => setSlotProperty(p)}>Manage Slots</Button>
                   <Button size="sm" variant="outline" onClick={() => setEditingProperty(p)}>Edit</Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
+                  <Button
+                    size="sm"
+                    variant="outline"
                     className="text-red-600 border-red-200 hover:bg-red-50"
                     onClick={() => handleDelete(p._id)}
                   >
@@ -954,8 +953,8 @@ export function OwnerWarnings() {
               <div className="flex-1">
                 <p className={`text-base ${!w.isRead ? 'font-semibold text-slate-900' : 'font-medium text-slate-600'}`}>{w.message}</p>
                 <div className="text-sm mt-2 text-slate-500 flex flex-wrap gap-2 items-center">
-                   <Badge variant="outline">{w.complaintId?.subject || 'General Notice'}</Badge>
-                   <span>• {new Date(w.createdAt).toLocaleDateString()}</span>
+                  <Badge variant="outline">{w.complaintId?.subject || 'General Notice'}</Badge>
+                  <span>• {new Date(w.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
               <div className="flex flex-col gap-2 items-end shrink-0">
@@ -1041,13 +1040,13 @@ function OwnerRescheduleModal({ request, onClose, onApproved }) {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               required
               min={new Date().toISOString().split('T')[0]}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-              value={selectedDate} 
-              onChange={e => setSelectedDate(e.target.value)} 
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
             />
           </div>
 
@@ -1064,11 +1063,10 @@ function OwnerRescheduleModal({ request, onClose, onApproved }) {
                     type="button"
                     key={s.start}
                     onClick={() => setSelectedSlot(s)}
-                    className={`p-2 text-sm font-medium rounded-lg border transition-all ${
-                      selectedSlot && selectedSlot.start === s.start
+                    className={`p-2 text-sm font-medium rounded-lg border transition-all ${selectedSlot && selectedSlot.start === s.start
                         ? 'bg-primary-600 border-primary-600 text-white'
                         : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500 hover:text-primary-600'
-                    }`}
+                      }`}
                   >
                     {s.start} - {s.end}
                   </button>
@@ -1206,17 +1204,17 @@ export function OwnerRescheduleRequests() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      <Button 
-                        size="sm" 
-                        disabled={submittingAction} 
+                      <Button
+                        size="sm"
+                        disabled={submittingAction}
                         onClick={() => setRescheduleModal(r)}
                       >
                         Reschedule / Approve
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
-                        disabled={submittingAction} 
+                        disabled={submittingAction}
                         onClick={() => setMessageModal(r)}
                       >
                         Decline
@@ -1240,8 +1238,8 @@ export function OwnerRescheduleRequests() {
             <form onSubmit={handleDecline} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Message to Customer</label>
-                <textarea 
-                  rows={3} 
+                <textarea
+                  rows={3}
                   required
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
                   value={ownerMessage}
@@ -1259,10 +1257,10 @@ export function OwnerRescheduleRequests() {
       )}
 
       {rescheduleModal && (
-        <OwnerRescheduleModal 
-          request={rescheduleModal} 
-          onClose={() => setRescheduleModal(null)} 
-          onApproved={() => { alert('Rescheduled successfully.'); fetchRequests(); }} 
+        <OwnerRescheduleModal
+          request={rescheduleModal}
+          onClose={() => setRescheduleModal(null)}
+          onApproved={() => { alert('Rescheduled successfully.'); fetchRequests(); }}
         />
       )}
     </div>

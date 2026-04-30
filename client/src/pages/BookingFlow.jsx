@@ -329,11 +329,10 @@ function BookingFlowInner() {
         <div className="flex items-center justify-between mb-2">
           {['Select Slot', 'Checkout', 'Confirmed'].map((label, i) => (
             <div key={i} className="flex flex-col items-center flex-1">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-                i + 1 < step ? 'bg-primary-600 text-white' :
-                i + 1 === step ? 'bg-primary-600 text-white ring-4 ring-primary-100' :
-                'bg-slate-200 text-slate-500'
-              }`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${i + 1 < step ? 'bg-primary-600 text-white' :
+                  i + 1 === step ? 'bg-primary-600 text-white ring-4 ring-primary-100' :
+                    'bg-slate-200 text-slate-500'
+                }`}>
                 {i + 1 < step ? '✓' : i + 1}
               </div>
               <span className={`text-xs mt-1 font-medium ${i + 1 === step ? 'text-primary-600' : 'text-slate-400'}`}>
@@ -396,11 +395,10 @@ function BookingFlowInner() {
                           setTimeLeft(null);
                         }}
                         disabled={lockedByMe}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
-                          isSelected
+                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isSelected
                             ? 'bg-primary-600 border-primary-600 text-white'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
-                        } ${lockedByMe ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${lockedByMe ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <span className="text-xs font-medium uppercase">{dayName}</span>
                         <span className="text-2xl font-bold my-0.5">{dayNum}</span>
@@ -429,14 +427,14 @@ function BookingFlowInner() {
                     }
 
                     let cls = 'p-3 rounded-lg border text-center font-medium text-sm transition-all ';
-                    if (isBooked)    cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
-                    else if (isPending)   cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
-                    else                  cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
+                    if (isBooked) cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
+                    else if (isPending) cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
+                    else cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
 
                     return (
                       <div key={i} className={cls} onClick={() => handleSelectSlot(s)}>
                         <div>{s.start} – {s.end}</div>
-                        {isBooked  && <div className="text-xs mt-0.5 opacity-70">Booked</div>}
+                        {isBooked && <div className="text-xs mt-0.5 opacity-70">Booked</div>}
                         {isPending && (
                           <div className="text-xs mt-0.5 font-semibold">
                             {pendingSecsLeft !== null
@@ -474,27 +472,25 @@ function BookingFlowInner() {
               ) : (
                 <p className="text-xs text-slate-500 mt-1">Review your booking and select a payment method.</p>
               )}
-              
+
               <div className="flex gap-3 p-1 bg-slate-100 rounded-lg mt-4">
                 <button
                   onClick={() => setPaymentMethod('online')}
                   disabled={lockedByMe}
-                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                    paymentMethod === 'online'
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${paymentMethod === 'online'
                       ? 'bg-white shadow text-primary-700'
                       : 'text-slate-500 hover:text-slate-700'
-                  } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
                   💳 Pay Online
                 </button>
                 <button
                   onClick={() => setPaymentMethod('onsite')}
                   disabled={lockedByMe}
-                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                    paymentMethod === 'onsite'
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${paymentMethod === 'onsite'
                       ? 'bg-white shadow text-primary-700'
                       : 'text-slate-500 hover:text-slate-700'
-                  } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    } ${lockedByMe ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
                   🏢 Pay On-Site
                 </button>

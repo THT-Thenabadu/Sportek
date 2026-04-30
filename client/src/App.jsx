@@ -28,7 +28,7 @@ import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerRescheduleRequests } 
 import SecurityCredentials from './pages/dashboards/SecurityCredentials';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
 import EventManagementDashboard from './pages/dashboards/EventManagementDashboard';
-import SecurityDashboard, { 
+import SecurityDashboard, {
   SecurityScanPage,
   SecurityAvailabilityPage,
   SecurityUpcomingPage,
@@ -48,9 +48,9 @@ function ProtectedRoute({ children, role }) {
   // superAdmin bypasses all role guards (they have full access).
   if (role && user.role !== role && !isAdmin) {
     const fallback =
-      user.role === 'propertyOwner'   ? '/dashboard/properties' :
-      user.role === 'securityOfficer' ? '/dashboard/scan'       :
-                                        '/dashboard/bookings';
+      user.role === 'propertyOwner' ? '/dashboard/properties' :
+        user.role === 'securityOfficer' ? '/dashboard/scan' :
+          '/dashboard/bookings';
     return <Navigate to={fallback} />;
   }
   return children;
@@ -77,32 +77,32 @@ function App() {
           <Route path="/venues" element={<Venues />} />
           <Route path="/events" element={<EventHub />} />
           <Route path="/events/:id" element={<EventDetails />} />
-        <Route path="/events/:id/book/:catIndex" element={<EventBooking />} />
-        <Route path="/events/:id/seats" element={<EventSeatSelection />} />
-        <Route path="/events/:id/payment" element={<EventPayment />} />
+          <Route path="/events/:id/book/:catIndex" element={<EventBooking />} />
+          <Route path="/events/:id/seats" element={<EventSeatSelection />} />
+          <Route path="/events/:id/payment" element={<EventPayment />} />
           <Route path="/facilities/:id" element={<FacilityDetails />} />
           <Route path="/facilities/:id/book" element={
             <ProtectedRoute>
               <BookingFlow />
             </ProtectedRoute>
           } />
-          
+
           <Route path="/dashboard" element={<DashboardLayout />}>
             {/* Auto-redirect dashboard index to the correct role home */}
             <Route index element={<Navigate to={
-               (user?.role === 'admin' || user?.role === 'superAdmin') ? '/dashboard/admin'      :
-               user?.role === 'securityOfficer'                        ? '/dashboard/scan'        :
-               user?.role === 'propertyOwner'                          ? '/dashboard/properties'  :
-               '/dashboard/bookings'
+              (user?.role === 'admin' || user?.role === 'superAdmin') ? '/dashboard/admin' :
+                user?.role === 'securityOfficer' ? '/dashboard/scan' :
+                  user?.role === 'propertyOwner' ? '/dashboard/properties' :
+                    '/dashboard/bookings'
             } />} />
-            
+
             {/* Customer Routes */}
             <Route path="bookings" element={<CustomerBookings />} />
             <Route path="tickets" element={<CustomerTickets />} />
             <Route path="reviews" element={<CustomerReviews />} />
             <Route path="complaints" element={<CustomerComplaints />} />
             <Route path="apply-owner" element={<OwnerApplication />} />
-            
+
             {/* Property Owner Routes */}
             <Route path="properties" element={<ProtectedRoute role="propertyOwner"><OwnerProperties /></ProtectedRoute>} />
             <Route path="assets" element={<ProtectedRoute role="propertyOwner"><OwnerAssets /></ProtectedRoute>} />
@@ -126,7 +126,7 @@ function App() {
             <Route path="booking-details" element={<ProtectedRoute role="securityOfficer"><SecurityBookingDetailsPage /></ProtectedRoute>} />
           </Route>
         </Route>
-        
+
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard/events-hub" element={
