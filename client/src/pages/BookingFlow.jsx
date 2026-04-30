@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import { loadStripe } from '@stripe/stripe-js';
@@ -83,8 +83,16 @@ function BookingFlowInner() {
   const [slotLockInfo, setSlotLockInfo] = useState({});
   // Local tick counter to force re-render of timers every second
   const [tick, setTick] = useState(0);
+  // The date that was active when the slot was locked — must not change after locking
+  const lockedDateRef = useRef(null);
 
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }); // YYYY-MM-DD in local time
 
   // ── Redirect Restricted Roles ──
   useEffect(() => {
@@ -174,6 +182,8 @@ function BookingFlowInner() {
       const secsLeft = Math.round((new Date(expiresAt) - Date.now()) / 1000);
       setTimeLeft(secsLeft);
       setLockedByMe(true);
+      // Capture the date at lock time so it can't drift
+      lockedDateRef.current = selectedDate;
     });
 
     // Server tells us our lock was rejected (slot already taken by someone else)
@@ -225,11 +235,13 @@ function BookingFlowInner() {
   // ── Create PaymentIntent once slot is locked ──
   useEffect(() => {
     if (!lockedByMe || !selectedSlot) return;
+    // Use the date that was active when the lock was acquired, not the current selectedDate
+    const bookingDate = lockedDateRef.current || selectedDate;
     setCreatingIntent(true);
     setIntentError('');
     api.post('/bookings/create-payment-intent', {
       propertyId,
-      date: selectedDate,
+      date: bookingDate,
       timeSlotStart: selectedSlot.start,
       timeSlotEnd: selectedSlot.end,
     })
@@ -242,7 +254,7 @@ function BookingFlowInner() {
         setIntentError(err.response?.data?.message || 'Could not initiate payment. Please try again.');
         setCreatingIntent(false);
       });
-  }, [lockedByMe, selectedSlot, propertyId, selectedDate]);
+  }, [lockedByMe, selectedSlot, propertyId]); // intentionally excludes selectedDate
 
   // ── Payment success ──
   const handlePaySuccess = () => {
@@ -253,9 +265,10 @@ function BookingFlowInner() {
 
   const handleOnsiteBooking = async () => {
     try {
+      const bookingDate = lockedDateRef.current || selectedDate;
       await api.post('/bookings/create-onsite', {
         propertyId,
-        date: selectedDate,
+        date: bookingDate,
         timeSlotStart: selectedSlot.start,
         timeSlotEnd: selectedSlot.end,
       });
@@ -362,7 +375,10 @@ function BookingFlowInner() {
                   {Array.from({ length: 4 }, (_, i) => {
                     const date = new Date();
                     date.setDate(date.getDate() + i);
-                    const dateStr = date.toISOString().split('T')[0];
+                    const yyyy = date.getFullYear();
+                    const mm = String(date.getMonth() + 1).padStart(2, '0');
+                    const dd = String(date.getDate()).padStart(2, '0');
+                    const dateStr = `${yyyy}-${mm}-${dd}`;
                     const isSelected = selectedDate === dateStr;
                     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
                     const dayNum = date.getDate();
@@ -371,6 +387,7 @@ function BookingFlowInner() {
                       <button
                         key={dateStr}
                         onClick={() => {
+                          if (lockedByMe) return;
                           setSelectedDate(dateStr);
                           setSelectedSlot(null);
                           setClientSecret('');
@@ -378,11 +395,12 @@ function BookingFlowInner() {
                           setLockedByMe(false);
                           setTimeLeft(null);
                         }}
+                        disabled={lockedByMe}
                         className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
                           isSelected
                             ? 'bg-primary-600 border-primary-600 text-white'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
-                        }`}
+                        } ${lockedByMe ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <span className="text-xs font-medium uppercase">{dayName}</span>
                         <span className="text-2xl font-bold my-0.5">{dayNum}</span>

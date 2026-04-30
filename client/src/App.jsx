@@ -13,6 +13,11 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Events from './pages/Events';
+import EventHub from './pages/EventHub';
+import EventDetails from './pages/EventDetails';
+import EventBooking from './pages/EventBooking';
+import EventSeatSelection from './pages/EventSeatSelection';
+import EventPayment from './pages/EventPayment';
 import Venues from './pages/Venues';
 import FacilityDetails from './pages/FacilityDetails';
 import BookingFlow from './pages/BookingFlow';
@@ -20,8 +25,18 @@ import BookingFlow from './pages/BookingFlow';
 // Dashboard Pages
 import { CustomerBookings, OwnerApplication, CustomerTickets, CustomerReviews, CustomerComplaints } from './pages/dashboards/CustomerDashboard';
 import { OwnerProperties, OwnerAssets, OwnerWarnings, OwnerRescheduleRequests } from './pages/dashboards/OwnerDashboard';
+import SecurityCredentials from './pages/dashboards/SecurityCredentials';
 import AdminDashboard, { AdminUsers, AdminApplications, AdminEvents } from './pages/dashboards/AdminDashboard';
-import SecurityDashboard from './pages/dashboards/SecurityDashboard';
+import EventManagementDashboard from './pages/dashboards/EventManagementDashboard';
+import SecurityDashboard, { 
+  SecurityScanPage,
+  SecurityAvailabilityPage,
+  SecurityUpcomingPage,
+  SecurityCurrentPage,
+  SecurityEntryLogPage,
+  SecurityReportPage,
+  SecurityBookingDetailsPage
+} from './pages/dashboards/SecurityDashboard';
 
 function ProtectedRoute({ children, role }) {
   const { user } = useAuthStore();
@@ -60,7 +75,11 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/venues" element={<Venues />} />
-          <Route path="/events" element={<Events />} />
+          <Route path="/events" element={<EventHub />} />
+          <Route path="/events/:id" element={<EventDetails />} />
+        <Route path="/events/:id/book/:catIndex" element={<EventBooking />} />
+        <Route path="/events/:id/seats" element={<EventSeatSelection />} />
+        <Route path="/events/:id/payment" element={<EventPayment />} />
           <Route path="/facilities/:id" element={<FacilityDetails />} />
           <Route path="/facilities/:id/book" element={
             <ProtectedRoute>
@@ -89,6 +108,7 @@ function App() {
             <Route path="assets" element={<ProtectedRoute role="propertyOwner"><OwnerAssets /></ProtectedRoute>} />
             <Route path="warnings" element={<ProtectedRoute role="propertyOwner"><OwnerWarnings /></ProtectedRoute>} />
             <Route path="reschedule" element={<ProtectedRoute role="propertyOwner"><OwnerRescheduleRequests /></ProtectedRoute>} />
+            <Route path="security-credentials" element={<ProtectedRoute role="propertyOwner"><SecurityCredentials /></ProtectedRoute>} />
 
             {/* Admin Routes */}
             <Route path="admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
@@ -97,17 +117,21 @@ function App() {
             <Route path="admin/events" element={<ProtectedRoute role="admin"><AdminEvents /></ProtectedRoute>} />
 
             {/* Security Routes */}
-            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="scanner" /></ProtectedRoute>} />
-            <Route path="availability" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="availability" /></ProtectedRoute>} />
-            <Route path="upcoming" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="upcoming" /></ProtectedRoute>} />
-            <Route path="current" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="current" /></ProtectedRoute>} />
-            <Route path="entry-log" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="entry-log" /></ProtectedRoute>} />
-            <Route path="report" element={<ProtectedRoute role="securityOfficer"><SecurityDashboard defaultTab="report" /></ProtectedRoute>} />
+            <Route path="scan" element={<ProtectedRoute role="securityOfficer"><SecurityScanPage /></ProtectedRoute>} />
+            <Route path="availability" element={<ProtectedRoute role="securityOfficer"><SecurityAvailabilityPage /></ProtectedRoute>} />
+            <Route path="upcoming" element={<ProtectedRoute role="securityOfficer"><SecurityUpcomingPage /></ProtectedRoute>} />
+            <Route path="current" element={<ProtectedRoute role="securityOfficer"><SecurityCurrentPage /></ProtectedRoute>} />
+            <Route path="entry-log" element={<ProtectedRoute role="securityOfficer"><SecurityEntryLogPage /></ProtectedRoute>} />
+            <Route path="report" element={<ProtectedRoute role="securityOfficer"><SecurityReportPage /></ProtectedRoute>} />
+            <Route path="booking-details" element={<ProtectedRoute role="securityOfficer"><SecurityBookingDetailsPage /></ProtectedRoute>} />
           </Route>
         </Route>
         
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/dashboard/events-hub" element={
+          <ProtectedRoute role="admin"><EventManagementDashboard /></ProtectedRoute>
+        } />
       </Routes>
       <Chatbot />
     </Router>

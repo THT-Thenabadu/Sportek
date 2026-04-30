@@ -9,7 +9,11 @@ const {
   markAttendance, 
   getBookingById,
   getUpcomingSecurityBookings,
-  getCurrentSecurityBookings
+  getCurrentSecurityBookings,
+  getAllSecurityBookings,
+  scanQR,
+  endSession,
+  checkinByToken
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middleware/auth');
 const Booking = require('../models/Booking');
@@ -17,6 +21,10 @@ const Property = require('../models/Property');
 
 router.route('/upcoming-security').get(protect, authorize('securityOfficer'), getUpcomingSecurityBookings);
 router.route('/current-security').get(protect, authorize('securityOfficer'), getCurrentSecurityBookings);
+router.route('/all-security').get(protect, authorize('securityOfficer'), getAllSecurityBookings);
+router.post('/scan-qr', protect, authorize('securityOfficer'), scanQR);
+router.post('/checkin-token', protect, authorize('securityOfficer'), checkinByToken);
+router.patch('/:id/end-session', protect, authorize('securityOfficer'), endSession);
 
 // Public endpoint to check slots
 router.route('/slots/:propertyId').get(getAvailableSlots);
@@ -25,43 +33,107 @@ router.route('/create-payment-intent').post(protect, createPaymentIntent);
 
 router.route('/my-bookings').get(protect, getMyBookings);
 
-// Daily report routes — must be before /:id to avoid route collision
-router.get('/daily-report', protect, authorize('securityOfficer'), async (req, res) => {
+// ── Reports ──────────────────────────────────────────────────────────────────
+router.get('/reports', protect, authorize('securityOfficer'), async (req, res) => {
   try {
-    const Booking = require('../models/Booking');
-    const date = req.query.date || new Date().toISOString().split('T')[0];
-    const start = new Date(date);
-    const end = new Date(date);
-    end.setDate(end.getDate() + 1);
-    const bookings = await Booking.find({
-      date: { $gte: start, $lt: end }
-    })
-      .populate('customerId', 'name email')
-      .populate('propertyId', 'name ownerId')
-      .sort('timeSlot.start');
-    const confirmed = bookings.filter(b => b.attendanceStatus === 'confirmed').length;
-    const noShow = bookings.filter(b => b.attendanceStatus === 'noShow').length;
-    const pending = bookings.filter(b => b.attendanceStatus === 'pending').length;
-    res.json({ date, total: bookings.length, confirmed, noShow, pending, bookings });
+    const { type, from, to } = req.query;
+    if (!type || !from || !to) return res.status(400).json({ message: 'type, from, and to are required' });
+
+    const Property = require('../models/Property');
+    const ownerId = req.user.associatedOwner;
+    if (!ownerId) return res.status(400).json({ message: 'No associated property owner.' });
+
+    const properties = await Property.find({ ownerId });
+    const propertyIds = properties.map(p => p._id);
+
+    const start = new Date(from); start.setHours(0,0,0,0);
+    const end   = new Date(to);   end.setHours(23,59,59,999);
+
+    if (type === 'booking') {
+      const bookings = await Booking.find({
+        propertyId: { $in: propertyIds },
+        date: { $gte: start, $lte: end }
+      }).populate('customerId','name email').populate('propertyId','name').sort({ date: 1 });
+
+      const total     = bookings.length;
+      const confirmed = bookings.filter(b => b.attendanceStatus === 'confirmed').length;
+      const noShow    = bookings.filter(b => b.attendanceStatus === 'noShow').length;
+      const pending   = bookings.filter(b => b.attendanceStatus === 'pending').length;
+      const revenue   = bookings.filter(b => ['booked','active','ended','completed'].includes(b.status))
+                                .reduce((s, b) => s + (b.totalAmount || 0), 0);
+      return res.json({ type, from, to, total, confirmed, noShow, pending, revenue, rows: bookings });
+    }
+
+    if (type === 'facility') {
+      const bookings = await Booking.find({
+        propertyId: { $in: propertyIds },
+        date: { $gte: start, $lte: end }
+      }).populate('propertyId','name');
+
+      const facilityMap = {};
+      properties.forEach(p => {
+        facilityMap[p._id.toString()] = { name: p.name, bookings: 0, confirmed: 0, noShow: 0, revenue: 0 };
+      });
+      bookings.forEach(b => {
+        const key = b.propertyId?._id?.toString() || b.propertyId?.toString();
+        if (facilityMap[key]) {
+          facilityMap[key].bookings++;
+          if (b.attendanceStatus === 'confirmed') facilityMap[key].confirmed++;
+          if (b.attendanceStatus === 'noShow')    facilityMap[key].noShow++;
+          if (['booked','active','ended','completed'].includes(b.status))
+            facilityMap[key].revenue += b.totalAmount || 0;
+        }
+      });
+      const rows = Object.values(facilityMap);
+      const total = bookings.length;
+      const revenue = rows.reduce((s, r) => s + r.revenue, 0);
+      return res.json({ type, from, to, total, revenue, rows });
+    }
+
+    return res.status(400).json({ message: 'Invalid report type. Use: booking, facility, entry' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+});
+
+router.post('/reports/send', protect, authorize('securityOfficer'), async (req, res) => {
+  try {
+    const { type, from, to, summary } = req.body;
+    const Warning = require('../models/Warning');
+    const ownerId = req.user.associatedOwner;
+    if (!ownerId) return res.status(400).json({ message: 'No associated property owner.' });
+
+    const typeLabel = type === 'booking' ? 'Booking Details' : type === 'facility' ? 'Facility Usage' : 'Entry Log';
+    const message = `[${typeLabel} Report] Period: ${from} to ${to}. ${summary}. Generated by security officer.`;
+    await Warning.create({ ownerId, complaintId: null, message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Legacy daily-report routes (kept for backward compat)
+router.get('/daily-report', protect, authorize('securityOfficer'), async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    const start = new Date(date); const end = new Date(date); end.setDate(end.getDate() + 1);
+    const bookings = await Booking.find({ date: { $gte: start, $lt: end } })
+      .populate('customerId','name email').populate('propertyId','name ownerId').sort('timeSlot.start');
+    const confirmed = bookings.filter(b => b.attendanceStatus === 'confirmed').length;
+    const noShow    = bookings.filter(b => b.attendanceStatus === 'noShow').length;
+    const pending   = bookings.filter(b => b.attendanceStatus === 'pending').length;
+    res.json({ date, total: bookings.length, confirmed, noShow, pending, bookings });
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 router.post('/daily-report/send', protect, authorize('securityOfficer'), async (req, res) => {
   try {
     const { date, total, confirmed, noShow, pending, propertyName, ownerId } = req.body;
     const Warning = require('../models/Warning');
-    const message = `Daily Report for ${propertyName} — ${date}: ${total} total bookings, ${confirmed} confirmed arrivals, ${noShow} no-shows, ${pending} pending. Generated by security officer.`;
-    await Warning.create({
-      ownerId,
-      complaintId: null,
-      message
-    });
+    const message = `Daily Report for ${propertyName} — ${date}: ${total} total, ${confirmed} confirmed, ${noShow} no-shows, ${pending} pending.`;
+    await Warning.create({ ownerId, complaintId: null, message });
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 router.route('/property/:propertyId').get(protect, authorize('admin', 'propertyOwner', 'securityOfficer'), getPropertyBookings);
@@ -106,6 +178,7 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
     });
     console.log('Existing booking found:', existing);
     if (existing) return res.status(400).json({ message: 'This slot is already taken' });
+    const passkey = Math.random().toString(36).substring(2, 8).toUpperCase();
     const booking = await Booking.create({
       propertyId,
       customerId: req.user._id,
@@ -114,20 +187,12 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       totalAmount: property.pricePerHour,
       status: 'pending_onsite',
       paymentMethod: 'onsite',
-      qrCodeData: JSON.stringify({
-        bookingId: 'PLACEHOLDER',
-        propertyId,
-        customerId: req.user._id,
-        timeSlot: { start: timeSlotStart, end: timeSlotEnd },
-        paymentMethod: 'onsite'
-      })
+      passkey,
     });
-    const passkey = Math.random().toString(36).substring(2, 8).toUpperCase();
-    booking.passkey = passkey;
     booking.qrCodeData = JSON.stringify({
-      bookingId: booking._id,
-      propertyId,
-      customerId: req.user._id,
+      bookingId: booking._id.toString(),
+      propertyId: propertyId.toString(),
+      customerId: req.user._id.toString(),
       date,
       timeSlot: { start: timeSlotStart, end: timeSlotEnd },
       passkey,

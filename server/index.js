@@ -20,6 +20,8 @@ const reviewRoutes = require('./routes/reviews');
 const complaintRoutes = require('./routes/complaints');
 const warningRoutes = require('./routes/warnings');
 const rescheduleRoutes = require('./routes/rescheduleRoutes');
+const venueRoutes = require('./routes/venueRoutes');
+const seatRoutes  = require('./routes/seatRoutes');
 
 connectDB();
 
@@ -73,6 +75,8 @@ app.use('/api/applications', applicationRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/warnings', warningRoutes);
+app.use('/api/venues', venueRoutes);
+app.use('/api/seats',  seatRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ message: 'Sportek API is running' });

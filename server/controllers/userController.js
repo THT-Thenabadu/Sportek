@@ -121,10 +121,104 @@ const banUser = async (req, res) => {
   }
 };
 
+// @desc    Get security officer for property owner
+// @route   GET /api/users/my-security-officer
+// @access  Private/PropertyOwner
+const getMySecurityOfficer = async (req, res) => {
+  try {
+    if (req.user.role !== 'propertyOwner') {
+      return res.status(403).json({ message: 'Access denied. Property owners only.' });
+    }
+
+    // Find security officer associated with this property owner
+    const securityOfficer = await User.findOne({
+      role: 'securityOfficer',
+      associatedOwner: req.user._id
+    }).select('-passwordHash');
+
+    if (!securityOfficer) {
+      return res.status(404).json({ message: 'No security officer found for your account' });
+    }
+
+    res.json(securityOfficer);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update security officer credentials
+// @route   PUT /api/users/update-security-officer
+// @access  Private/PropertyOwner
+const updateSecurityOfficer = async (req, res) => {
+  try {
+    if (req.user.role !== 'propertyOwner') {
+      return res.status(403).json({ message: 'Access denied. Property owners only.' });
+    }
+
+    const { email, password } = req.body;
+
+    // Find security officer associated with this property owner
+    const securityOfficer = await User.findOne({
+      role: 'securityOfficer',
+      associatedOwner: req.user._id
+    });
+
+    if (!securityOfficer) {
+      return res.status(404).json({ message: 'No security officer found for your account' });
+    }
+
+    // Check if email is already taken by another user
+    if (email && email !== securityOfficer.email) {
+      const emailExists = await User.findOne({ email, _id: { $ne: securityOfficer._id } });
+      if (emailExists) {
+        return res.status(400).json({ message: 'Email is already in use' });
+      }
+      securityOfficer.email = email;
+    }
+
+    // Update password if provided
+    if (password) {
+      // Get the full property owner user with passwordHash to compare
+      const propertyOwner = await User.findById(req.user._id);
+      
+      if (!propertyOwner || !propertyOwner.passwordHash) {
+        return res.status(500).json({ message: 'Unable to verify password' });
+      }
+
+      // Check if new password is same as property owner's password
+      const isSameAsOwnerPassword = await bcrypt.compare(password, propertyOwner.passwordHash);
+      if (isSameAsOwnerPassword) {
+        return res.status(400).json({ 
+          message: 'Security officer password must be different from your property owner password' 
+        });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      securityOfficer.passwordHash = await bcrypt.hash(password, salt);
+    }
+
+    await securityOfficer.save();
+
+    res.json({
+      message: 'Security officer credentials updated successfully',
+      securityOfficer: {
+        _id: securityOfficer._id,
+        name: securityOfficer.name,
+        email: securityOfficer.email,
+        role: securityOfficer.role
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   getUserProfile,
   getAllUsers,
-  banUser
+  banUser,
+  getMySecurityOfficer,
+  updateSecurityOfficer
 };

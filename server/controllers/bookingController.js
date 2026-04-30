@@ -116,8 +116,39 @@ const createPaymentIntent = async (req, res) => {
     const slotKey = `${propertyId}_${date}_${timeSlotStart}`;
     const lockedData = lockedSlots.get(slotKey);
 
-    if (!lockedData || lockedData.userId !== req.user._id.toString()) {
-      return res.status(400).json({ message: 'Slot not properly locked by you.' });
+    console.log(`[createPaymentIntent] slotKey="${slotKey}" userId="${req.user._id}" lockedData=`, lockedData ? `userId=${lockedData.userId}` : 'NOT FOUND');
+    console.log(`[createPaymentIntent] All current locks:`, [...lockedSlots.keys()]);
+
+    if (!lockedData) {
+      // Lock missing — server may have restarted or the socket lock was lost.
+      // Check the slot is still free in DB (ignore pending bookings by this same user — retries).
+      const targetDate = new Date(date);
+      targetDate.setHours(0, 0, 0, 0);
+      const conflict = await Booking.findOne({
+        propertyId,
+        date: targetDate,
+        'timeSlot.start': timeSlotStart,
+        status: { $in: ['booked', 'active', 'pending_onsite'] },
+        // A pending booking by THIS user is just a retry — don't block it
+        customerId: { $ne: req.user._id },
+      });
+      if (conflict) {
+        return res.status(400).json({ message: 'This slot is no longer available.' });
+      }
+      // Also clean up any stale pending booking this user left from a previous attempt
+      await Booking.deleteMany({
+        propertyId,
+        date: targetDate,
+        'timeSlot.start': timeSlotStart,
+        customerId: req.user._id,
+        status: 'pending',
+      });
+      // Re-acquire the lock
+      const expiresAt = new Date(Date.now() + 120000);
+      const timeoutId = setTimeout(() => { lockedSlots.delete(slotKey); }, 120000);
+      lockedSlots.set(slotKey, { userId: req.user._id.toString(), timeoutId, expiresAt });
+    } else if (lockedData.userId !== req.user._id.toString()) {
+      return res.status(400).json({ message: 'This slot is currently held by another user.' });
     }
 
     const property = await Property.findById(propertyId);
@@ -138,7 +169,7 @@ const createPaymentIntent = async (req, res) => {
       status: 'pending',
       selectedAssets: selectedAssets || [],
       totalAmount,
-      lockExpiresAt: lockedData.expiresAt
+      lockExpiresAt: lockedSlots.get(slotKey)?.expiresAt
     });
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -257,9 +288,9 @@ const stripeWebhook = async (req, res) => {
         booking.passkey = passkey;
         booking.status = 'booked';
         booking.qrCodeData = JSON.stringify({
-          bookingId: booking._id,
-          propertyId: booking.propertyId,
-          customerId: booking.customerId,
+          bookingId: booking._id.toString(),
+          propertyId: booking.propertyId._id ? booking.propertyId._id.toString() : booking.propertyId.toString(),
+          customerId: booking.customerId._id ? booking.customerId._id.toString() : booking.customerId.toString(),
           date: booking.date,
           timeSlot: booking.timeSlot,
           passkey,
@@ -354,9 +385,10 @@ const getUpcomingSecurityBookings = async (req, res) => {
     const properties = await Property.find({ ownerId: req.user.associatedOwner });
     const propertyIds = properties.map(p => p._id);
 
+    // Only show bookings not yet scanned in
     const bookings = await Booking.find({
       propertyId: { $in: propertyIds },
-      status: 'booked',
+      status: { $in: ['booked', 'pending_onsite'] },
       attendanceStatus: 'pending'
     }).populate('customerId', 'name email').populate('propertyId', 'name');
 
@@ -378,10 +410,217 @@ const getCurrentSecurityBookings = async (req, res) => {
     const properties = await Property.find({ ownerId: req.user.associatedOwner });
     const propertyIds = properties.map(p => p._id);
 
+    // Show only active (checked in, not yet ended) bookings
     const bookings = await Booking.find({
       propertyId: { $in: propertyIds },
-      attendanceStatus: { $in: ['confirmed', 'noShow'] }
+      status: 'active'
     }).populate('customerId', 'name email').populate('propertyId', 'name');
+
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Scan QR code — validate and check-in a booking
+// @route   POST /api/bookings/scan-qr
+// @access  Private/SecurityOfficer
+const scanQR = async (req, res) => {
+  try {
+    const { qrData } = req.body;
+    if (!qrData) return res.status(400).json({ message: 'QR data is required' });
+
+    let bookingId;
+    try {
+      const payload = JSON.parse(qrData);
+      // bookingId may be a full object (populated) or a string — handle both
+      const raw = payload.bookingId;
+      if (raw && typeof raw === 'object' && raw._id) {
+        bookingId = raw._id.toString();
+      } else if (raw) {
+        bookingId = raw.toString();
+      }
+    } catch {
+      // Not JSON — treat as raw bookingId or bookingToken
+      bookingId = qrData.trim();
+    }
+
+    if (!bookingId) {
+      return res.status(400).json({ message: 'Could not extract booking ID from QR data' });
+    }
+
+    // Try finding by _id first, then by bookingToken as fallback
+    let booking = null;
+    try {
+      booking = await Booking.findById(bookingId)
+        .populate('customerId', 'name email')
+        .populate('propertyId', 'name ownerId');
+    } catch (e) {
+      // Invalid ObjectId — try bookingToken
+    }
+
+    if (!booking) {
+      booking = await Booking.findOne({ bookingToken: bookingId.toUpperCase() })
+        .populate('customerId', 'name email')
+        .populate('propertyId', 'name ownerId');
+    }
+
+    if (!booking) return res.status(404).json({ message: 'Invalid QR — booking not found' });
+
+    // One-time use check
+    if (booking.qrUsed) {
+      return res.status(400).json({ message: 'This QR code has already been used and is expired' });
+    }
+
+    // Belongs to this officer's property
+    const ownerId = req.user.associatedOwner?.toString();
+    const bookingOwnerId = booking.propertyId?.ownerId?.toString();
+    if (!ownerId || ownerId !== bookingOwnerId) {
+      return res.status(403).json({ message: 'This QR belongs to a different property' });
+    }
+
+    // Valid state
+    if (!['booked', 'pending_onsite'].includes(booking.status)) {
+      return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
+    }
+
+    // Time window validation — parse as UTC to match how booking.date is stored
+    const datePart = booking.date.toISOString().split('T')[0];
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
+    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const now = new Date();
+
+    // Valid from 30 minutes before the booking start
+    const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
+
+    if (now < validFrom) {
+      const diffMins = Math.ceil((validFrom - now) / 60000);
+      return res.status(400).json({
+        message: `QR not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        validFrom: validFrom.toISOString(),
+        bookingStart: startDateTime.toISOString(),
+      });
+    }
+
+    if (endDateTime < now) {
+      return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
+    }
+
+    // Check in
+    booking.status = 'active';
+    booking.attendanceStatus = 'confirmed';
+    booking.qrUsed = true;
+    await booking.save();
+
+    res.json({ success: true, booking });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Check in by booking token (manual fallback when QR can't be scanned)
+// @route   POST /api/bookings/checkin-token
+// @access  Private/SecurityOfficer
+const checkinByToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ message: 'Token is required' });
+
+    const booking = await Booking.findOne({ bookingToken: token.trim().toUpperCase() })
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name ownerId');
+
+    if (!booking) return res.status(404).json({ message: 'No booking found with this token' });
+
+    if (booking.qrUsed) {
+      return res.status(400).json({ message: 'This token has already been used — entry expired' });
+    }
+
+    const ownerId = req.user.associatedOwner?.toString();
+    const bookingOwnerId = booking.propertyId?.ownerId?.toString();
+    if (!ownerId || ownerId !== bookingOwnerId) {
+      return res.status(403).json({ message: 'This booking belongs to a different property' });
+    }
+
+    if (!['booked', 'pending_onsite'].includes(booking.status)) {
+      return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
+    }
+
+    // Time window validation — parse as UTC to match how booking.date is stored
+    const datePart = booking.date.toISOString().split('T')[0];
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
+    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const now = new Date();
+
+    // Valid from 30 minutes before the booking start
+    const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
+
+    if (now < validFrom) {
+      const diffMins = Math.ceil((validFrom - now) / 60000);
+      return res.status(400).json({
+        message: `Token not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        validFrom: validFrom.toISOString(),
+        bookingStart: startDateTime.toISOString(),
+      });
+    }
+
+    if (endDateTime < now) {
+      return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
+    }
+
+    booking.status = 'active';
+    booking.attendanceStatus = 'confirmed';
+    booking.qrUsed = true;
+    await booking.save();
+
+    res.json({ success: true, booking });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    End a booking session
+// @route   PATCH /api/bookings/:id/end-session
+// @access  Private/SecurityOfficer
+const endSession = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name');
+
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    if (booking.status !== 'active') {
+      return res.status(400).json({ message: 'Booking is not currently active' });
+    }
+
+    booking.status = 'ended';
+    await booking.save();
+
+    res.json({ success: true, booking });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getAllSecurityBookings = async (req, res) => {
+  try {
+    if (req.user.role !== 'securityOfficer') {
+      return res.status(403).json({ message: 'Access denied. Security officers only.' });
+    }
+    if (!req.user.associatedOwner) {
+      return res.status(400).json({ message: 'No associated property owner linked to your account.' });
+    }
+    const Property = require('../models/Property');
+    const properties = await Property.find({ ownerId: req.user.associatedOwner });
+    const propertyIds = properties.map(p => p._id);
+
+    // Get all bookings for the properties
+    const bookings = await Booking.find({
+      propertyId: { $in: propertyIds }
+    })
+    .populate('customerId', 'name email')
+    .populate('propertyId', 'name')
+    .sort({ date: -1 }); // Sort by date, newest first
 
     res.json(bookings);
   } catch (error) {
@@ -458,5 +697,9 @@ module.exports = {
   markAttendance,
   getBookingById,
   getUpcomingSecurityBookings,
-  getCurrentSecurityBookings
+  getCurrentSecurityBookings,
+  getAllSecurityBookings,
+  scanQR,
+  endSession,
+  checkinByToken
 };
