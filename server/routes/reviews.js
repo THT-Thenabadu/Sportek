@@ -11,7 +11,9 @@ router.post('/', protect, authorize('customer'), async (req, res) => {
 
     const booking = await Booking.findOne({ _id: bookingId, customerId: req.user._id });
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    if (booking.status !== 'completed') return res.status(400).json({ message: 'Booking must be completed to leave a review' });
+    if (!['booked', 'completed', 'confirmed'].includes(booking.status)) {
+      return res.status(400).json({ message: 'Booking must be successful to leave a review' });
+    }
 
     const existing = await Review.findOne({ propertyId, customerId: req.user._id, bookingId });
     if (existing) return res.status(400).json({ message: 'You have already reviewed this booking' });

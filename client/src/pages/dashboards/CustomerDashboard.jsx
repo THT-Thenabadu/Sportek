@@ -595,10 +595,9 @@ export function CustomerReviews() {
       
       setMyReviews(userReviews);
 
-      // Filter bookings: booked/completed/confirmed AND attendanceStatus confirmed
+      // Filter bookings: booked/completed/confirmed (meaning payment was successful)
       const validBookings = allBookings.filter(b => 
         (b.status === 'booked' || b.status === 'completed' || b.status === 'confirmed') && 
-        b.attendanceStatus === 'confirmed' &&
         b.propertyId // Ensure propertyId is populated
       );
 
@@ -711,8 +710,8 @@ export function CustomerReviews() {
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
             <span className="text-2xl text-slate-400">★</span>
           </div>
-          <h3 className="text-lg font-semibold text-slate-700 mb-1">No visited facilities</h3>
-          <p className="text-slate-400 text-sm max-w-xs">You have not attended any bookings yet. Reviews can be left after attendance is confirmed.</p>
+          <h3 className="text-lg font-semibold text-slate-700 mb-1">No bookings to review</h3>
+          <p className="text-slate-400 text-sm max-w-xs">You have not successfully booked any properties yet. Once you complete a booking, you can leave a review here.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

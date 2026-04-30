@@ -152,7 +152,10 @@ function BookingFlowInner() {
     s.emit('join_property_room', propertyId);
 
     // Server broadcasts to the WHOLE room when someone locks — update state for ALL users
-    s.on('slot_locked', ({ timeSlotStart, expiresAt }) => {
+    s.on('slot_locked', ({ date, timeSlotStart, expiresAt }) => {
+      // Only process if the event is for the currently viewed date
+      if (date !== selectedDate) return;
+      
       // Update slot state to Pending (visually yellow/blocked) for every connected user
       setSlots(prev => prev.map(sl =>
         sl.start === timeSlotStart ? { ...sl, state: 'Pending', lockExpiresAt: expiresAt } : sl
@@ -162,7 +165,8 @@ function BookingFlowInner() {
     });
 
     // Server broadcasts when a lock expires or payment fails/is cancelled
-    s.on('slot_released', ({ timeSlotStart }) => {
+    s.on('slot_released', ({ date, timeSlotStart }) => {
+      if (date !== selectedDate) return;
       setSlots(prev => prev.map(sl =>
         sl.start === timeSlotStart ? { ...sl, state: 'Available', lockExpiresAt: null } : sl
       ));
@@ -170,7 +174,8 @@ function BookingFlowInner() {
     });
 
     // Server broadcasts when a booking is fully confirmed via Stripe payment
-    s.on('slot_confirmed', ({ timeSlotStart }) => {
+    s.on('slot_confirmed', ({ date, timeSlotStart }) => {
+      if (date && date !== selectedDate) return;
       setSlots(prev => prev.map(sl =>
         sl.start === timeSlotStart ? { ...sl, state: 'Booked', lockExpiresAt: null } : sl
       ));
@@ -419,6 +424,7 @@ function BookingFlowInner() {
                   {slots.map((s, i) => {
                     const isBooked = s.state === 'Booked';
                     const isPending = s.state === 'Pending';
+                    const isBlocked = s.state === 'Blocked';
 
                     // Calculate remaining seconds for Pending slots (shown to ALL users)
                     let pendingSecsLeft = null;
@@ -428,13 +434,15 @@ function BookingFlowInner() {
 
                     let cls = 'p-3 rounded-lg border text-center font-medium text-sm transition-all ';
                     if (isBooked) cls += 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
+                    else if (isBlocked) cls += 'bg-red-50 text-red-400 border-red-200 cursor-not-allowed';
                     else if (isPending) cls += 'bg-yellow-50 text-yellow-700 border-yellow-300 cursor-not-allowed';
                     else cls += 'bg-primary-50 hover:bg-primary-100 text-primary-700 border-primary-200 cursor-pointer';
 
                     return (
                       <div key={i} className={cls} onClick={() => handleSelectSlot(s)}>
                         <div>{s.start} – {s.end}</div>
-                        {isBooked && <div className="text-xs mt-0.5 opacity-70">Booked</div>}
+                        {isBooked && <div className="text-xs mt-0.5 opacity-70 font-semibold">Booked</div>}
+                        {isBlocked && <div className="text-xs mt-0.5 opacity-70 font-semibold text-red-600">Blocked</div>}
                         {isPending && (
                           <div className="text-xs mt-0.5 font-semibold">
                             {pendingSecsLeft !== null

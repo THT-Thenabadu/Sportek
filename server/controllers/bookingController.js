@@ -484,10 +484,10 @@ const scanQR = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
-    // Time window validation — parse as UTC to match how booking.date is stored
+    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
     const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
+    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
     const now = new Date();
 
     // Valid from 30 minutes before the booking start
@@ -546,10 +546,10 @@ const checkinByToken = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
-    // Time window validation — parse as UTC to match how booking.date is stored
+    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
     const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
+    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
     const now = new Date();
 
     // Valid from 30 minutes before the booking start
