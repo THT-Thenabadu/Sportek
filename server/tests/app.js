@@ -20,6 +20,7 @@ const express = require('express');
 
 const bookingRoutes = require('../routes/bookingRoutes');
 const userRoutes    = require('../routes/userRoutes');
+const eventRoutes   = require('../routes/eventRoutes');
 
 const app = express();
 
@@ -33,5 +34,6 @@ app.use((req, res, next) => {
 
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users',    userRoutes);
+app.use('/api/events',   eventRoutes);
 
 module.exports = app;

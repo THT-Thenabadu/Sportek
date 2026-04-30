@@ -8,7 +8,8 @@
     "dev": "nodemon index.js",
     "seed:admin": "node scripts/seedAdmin.js",
     "test": "jest --testPathPattern=tests/ --forceExit --detectOpenHandles",
-    "test:security": "jest tests/security.test.js --forceExit --detectOpenHandles --verbose"
+    "test:security": "jest tests/security.test.js --forceExit --detectOpenHandles --verbose",
+    "test:events": "jest tests/event.test.js --forceExit --detectOpenHandles --verbose"
   },
   "jest": {
     "testEnvironment": "node",
