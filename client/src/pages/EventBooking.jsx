@@ -1,35 +1,59 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../lib/axios';
 import useAuthStore from '../store/useAuthStore';
 import { loadStripe } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { ArrowLeft, CheckCircle, Ticket, Calendar, MapPin, Clock } from 'lucide-react';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
-function CheckoutForm({ total, onCancel, onSuccess }) {
+function CheckoutForm({ clientSecret, ticketId, total, onCancel, onSuccess }) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setProcessing(true);
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: `${window.location.origin}/dashboard/tickets` },
-      redirect: 'if_required',
-    });
-    if (error) { alert(error.message); setProcessing(false); }
-    else if (paymentIntent?.status === 'succeeded') onSuccess();
+    setErrorMsg('');
+
+    try {
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: elements.getElement(CardElement) }
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+        setProcessing(false);
+      } else if (paymentIntent?.status === 'succeeded') {
+        await api.patch(`/tickets/${ticketId}/confirm-payment`);
+        onSuccess();
+      }
+    } catch (err) {
+      setErrorMsg('Payment failed. Please try again.');
+      setProcessing(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">Card Details</label>
+        <div className="border border-slate-300 rounded-lg p-3 bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+          <CardElement options={{
+            style: {
+              base: { fontSize: '15px', color: '#1e293b', '::placeholder': { color: '#94a3b8' } },
+              invalid: { color: '#ef4444' }
+            }
+          }} />
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Test card: 4242 4242 4242 4242 · Any future date · Any CVC</p>
+      </div>
+      {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
       <div className="flex gap-3 pt-2">
         <button type="button" onClick={onCancel} disabled={processing}
           className="flex-1 py-3 text-sm text-slate-600 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors font-medium">
@@ -52,6 +76,7 @@ export default function EventBooking() {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [clientSecret, setClientSecret] = useState('');
+  const [ticketId, setTicketId] = useState('');
   const [payLoading, setPayLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -74,7 +99,10 @@ export default function EventBooking() {
         });
       })
       .then(res => {
-        if (res?.data?.clientSecret) setClientSecret(res.data.clientSecret);
+        if (res?.data?.clientSecret) {
+          setClientSecret(res.data.clientSecret);
+          setTicketId(res.data.ticketId);
+        }
       })
       .catch(err => {
         alert(err.response?.data?.message || 'Could not initiate booking.');
@@ -237,8 +265,10 @@ export default function EventBooking() {
                   Test card: 4242 4242 4242 4242 · Any future date · Any CVC
                 </p>
                 {clientSecret ? (
-                  <Elements stripe={stripePromise} options={{ clientSecret }}>
+                  <Elements stripe={stripePromise}>
                     <CheckoutForm
+                      clientSecret={clientSecret}
+                      ticketId={ticketId}
                       total={cat.price}
                       onCancel={() => navigate(`/events/${id}`)}
                       onSuccess={() => setSuccess(true)}

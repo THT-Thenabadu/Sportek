@@ -1,43 +1,59 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../lib/axios';
 import PageWrapper from '../components/ui/PageWrapper';
 import Card, { CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { loadStripe } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
-function CheckoutForm({ total, onCancel, onSuccess }) {
+function CheckoutForm({ clientSecret, ticketId, total, onCancel, onSuccess }) {
   const stripe = useStripe();
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setIsProcessing(true);
+    setErrorMsg('');
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: `${window.location.origin}/dashboard/tickets`,
-      },
-      redirect: 'if_required' 
-    });
+    try {
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: elements.getElement(CardElement) }
+      });
 
-    if (error) {
-      alert(error.message);
+      if (error) {
+        setErrorMsg(error.message);
+        setIsProcessing(false);
+      } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+        await api.patch(`/tickets/${ticketId}/confirm-payment`);
+        onSuccess();
+      }
+    } catch (err) {
+      setErrorMsg('Payment failed. Please try again.');
       setIsProcessing(false);
-    } else if (paymentIntent && paymentIntent.status === 'succeeded') {
-      onSuccess();
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">Card Details</label>
+        <div className="border border-slate-300 rounded-lg p-3 bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+          <CardElement options={{
+            style: {
+              base: { fontSize: '15px', color: '#1e293b', '::placeholder': { color: '#94a3b8' } },
+              invalid: { color: '#ef4444' }
+            }
+          }} />
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Test card: 4242 4242 4242 4242 · Any future date · Any CVC</p>
+      </div>
+      {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
       <div className="flex justify-end gap-3 pt-4 border-t mt-4">
         <Button variant="outline" type="button" onClick={onCancel} disabled={isProcessing}>Cancel</Button>
         <Button type="submit" isLoading={isProcessing}>Pay ${total}</Button>
@@ -57,11 +73,12 @@ function Events() {
   const purchaseTicket = async (eventDoc, tierObj) => {
     try {
       const res = await api.post('/tickets/purchase', { eventId: eventDoc._id, tier: tierObj.tier });
-      setCheckoutData({
-        event: eventDoc,
-        tier: tierObj,
-        clientSecret: res.data.clientSecret
-      });
+        setCheckoutData({
+          event: eventDoc,
+          tier: tierObj,
+          clientSecret: res.data.clientSecret,
+          ticketId: res.data.ticketId
+        });
     } catch (err) {
       alert(err.response?.data?.message || 'Error fetching ticket session. Are you logged in?');
     }
@@ -119,9 +136,10 @@ function Events() {
               1x {checkoutData.tier.tier} Ticket — {checkoutData.event.name || checkoutData.event.title}
             </p>
             {checkoutData.clientSecret ? (
-              <Elements stripe={stripePromise} options={{ clientSecret: checkoutData.clientSecret }}>
+              <Elements stripe={stripePromise}>
                 <CheckoutForm 
-                  clientSecret={checkoutData.clientSecret} 
+                  clientSecret={checkoutData.clientSecret}
+                  ticketId={checkoutData.ticketId}
                   total={checkoutData.tier.price}
                   onCancel={() => setCheckoutData(null)} 
                   onSuccess={handleSuccess} 

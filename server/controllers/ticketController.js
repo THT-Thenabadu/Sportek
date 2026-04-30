@@ -95,13 +95,25 @@ const purchaseTicketIntent = async (req, res) => {
       seats:      selectedSeats.map(s => s.seatId),
       customerId: req.user._id,
     });
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(totalAmount * 100),
+      currency: 'lkr',
+      metadata: {
+        type: 'ticket_purchase',
+        ticketId: ticket._id.toString(),
+        eventId: event._id.toString(),
+        customerId: req.user._id.toString(),
+      },
+    });
+
+    ticket.stripePaymentIntentId = paymentIntent.id;
     await ticket.save();
 
     // Release seat locks — seats are now recorded in DB
     unlockAllForUser(eventId, req.user._id.toString());
 
-    // Return ticketId directly (no Stripe for now — payment is simulated in UI)
-    res.json({ ticketId: ticket._id, clientSecret: null });
+    res.json({ ticketId: ticket._id, clientSecret: paymentIntent.client_secret });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

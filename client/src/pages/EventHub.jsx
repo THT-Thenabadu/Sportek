@@ -1,9 +1,9 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/axios';
 import useAuthStore from '../store/useAuthStore';
 import { loadStripe } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Button from '../components/ui/Button';
 import { Search, MapPin, Calendar, Clock, Ticket, X, ChevronRight } from 'lucide-react';
@@ -11,27 +11,59 @@ import { Search, MapPin, Calendar, Clock, Ticket, X, ChevronRight } from 'lucide
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 // ─── Stripe checkout form ─────────────────────────────────────────────────────
-function CheckoutForm({ total, onCancel, onSuccess }) {
+function CheckoutForm({ event, category, total, onCancel, onSuccess }) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setProcessing(true);
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: `${window.location.origin}/dashboard/tickets` },
-      redirect: 'if_required',
-    });
-    if (error) { alert(error.message); setProcessing(false); }
-    else if (paymentIntent?.status === 'succeeded') onSuccess();
+    setErrorMsg('');
+    try {
+      // 1. Create Ticket & PaymentIntent
+      const res = await api.post('/tickets/purchase', {
+        eventId: event._id,
+        category: category.name,
+        tier: category.name,
+      });
+      const { ticketId, clientSecret } = res.data;
+
+      // 2. Confirm Card Payment
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: elements.getElement(CardElement) }
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+        setProcessing(false);
+      } else if (paymentIntent?.status === 'succeeded') {
+        await api.patch(`/tickets/${ticketId}/confirm-payment`);
+        onSuccess();
+      }
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || 'Payment failed.');
+      setProcessing(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">Card Details</label>
+        <div className="border border-slate-300 rounded-lg p-3 bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+          <CardElement options={{
+            style: {
+              base: { fontSize: '15px', color: '#1e293b', '::placeholder': { color: '#94a3b8' } },
+              invalid: { color: '#ef4444' }
+            }
+          }} />
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Test card: 4242 4242 4242 4242 · Any future date · Any CVC</p>
+      </div>
+      {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button type="button" onClick={onCancel} disabled={processing}
           className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50">
@@ -145,20 +177,7 @@ function TicketModal({ event, onClose }) {
   const handleSelectCategory = async (cat) => {
     if (!user) { navigate('/login'); return; }
     setSelectedCat(cat);
-    setLoading(true);
-    try {
-      const res = await api.post('/tickets/purchase', {
-        eventId: event._id,
-        category: cat.name,
-        tier: cat.name,
-      });
-      setClientSecret(res.data.clientSecret);
-    } catch (err) {
-      alert(err.response?.data?.message || 'Could not initiate payment. Please log in.');
-      setSelectedCat(null);
-    } finally {
-      setLoading(false);
-    }
+    // Proceed directly to the CardElement form, no need to fetch clientSecret beforehand
   };
 
   const handleSuccess = () => {
@@ -213,20 +232,26 @@ function TicketModal({ event, onClose }) {
             </div>
           ) : loading ? (
             <div className="flex justify-center py-10"><LoadingSpinner /></div>
-          ) : clientSecret ? (
+          ) : (
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <button onClick={() => { setSelectedCat(null); setClientSecret(''); }}
+                <button onClick={() => { setSelectedCat(null); }}
                   className="text-sm text-blue-600 hover:underline">← Back</button>
                 <span className="text-sm text-slate-500">
                   1× {selectedCat.name} — ${selectedCat.price}
                 </span>
               </div>
-              <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <CheckoutForm total={selectedCat.price} onCancel={onClose} onSuccess={handleSuccess} />
+              <Elements stripe={stripePromise}>
+                <CheckoutForm 
+                  event={event}
+                  category={selectedCat}
+                  total={selectedCat.price} 
+                  onCancel={onClose} 
+                  onSuccess={handleSuccess} 
+                />
               </Elements>
             </div>
-          ) : null}
+          )}
         </div>
       </div>
     </div>

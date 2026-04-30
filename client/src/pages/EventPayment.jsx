@@ -1,10 +1,14 @@
-﻿import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../lib/axios';
 import useAuthStore from '../store/useAuthStore';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { ArrowLeft, CreditCard, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket } from 'lucide-react';
+import { ArrowLeft, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket } from 'lucide-react';
 import QRCode from 'qrcode';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 const fmt = (n) => Number(n).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -131,12 +135,9 @@ export default function EventPayment() {
   const [ticketId, setTicketId] = useState('');
   const [error, setError] = useState('');
 
-  // Card form state
-  const [cardName, setCardName] = useState('');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
 
+
+  // We will pass these directly to the Elements provider now
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
     const stored = sessionStorage.getItem(`event_seats_${eventId}`);
@@ -150,40 +151,13 @@ export default function EventPayment() {
   }, [eventId, isAuthenticated]);
 
   const serviceCharge = bookingData ? bookingData.totalAmount * 0.05 : 0;
-  const grandTotal    = bookingData ? bookingData.totalAmount + serviceCharge : 0;
+  const grandTotal = bookingData ? bookingData.totalAmount + serviceCharge : 0;
 
-  const handlePay = async (e) => {
-    e.preventDefault();
-    if (!cardName.trim()) { setError('Please enter cardholder name.'); return; }
-    setError('');
-    setProcessing(true);
-    try {
-      const allSeats = bookingData.seats;
-      const firstCat = allSeats[0]?.category;
-      // Step 1: create ticket (pending)
-      const res = await api.post('/tickets/purchase', {
-        eventId,
-        category: firstCat,
-        tier: firstCat,
-        seats: allSeats,
-      });
-      const newTicketId = res.data.ticketId;
-
-      // Step 2: confirm payment (marks as paid + syncs soldQuantity)
-      await api.patch(`/tickets/${newTicketId}/confirm-payment`);
-
-      setTicketId(newTicketId);
-      sessionStorage.removeItem(`event_seats_${eventId}`);
-      setSuccess(true);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Payment failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
+  const handlePaySuccess = (newTicketId) => {
+    setTicketId(newTicketId);
+    sessionStorage.removeItem(`event_seats_${eventId}`);
+    setSuccess(true);
   };
-
-  const formatCard = (v) => v.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
-  const formatExpiry = (v) => { const d = v.replace(/\D/g, '').slice(0, 4); return d.length > 2 ? `${d.slice(0,2)}/${d.slice(2)}` : d; };
 
   if (loading) return (
     <div className="min-h-screen bg-[#eef2f7] flex items-center justify-center">
@@ -324,66 +298,98 @@ export default function EventPayment() {
             {/* ── Right: Payment Details ── */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6">
               <h2 className="font-bold text-slate-900 text-lg flex items-center gap-2 mb-5">
-                <CreditCard className="w-5 h-5 text-blue-500" /> Payment Details
+                <Lock className="w-5 h-5 text-blue-500" /> Payment Details
               </h2>
 
-              <form onSubmit={handlePay} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Cardholder Name</label>
-                  <input
-                    type="text" required placeholder="John Doe"
-                    value={cardName} onChange={e => setCardName(e.target.value)}
-                    className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Card Number</label>
-                  <input
-                    type="text" required placeholder="1234 5678 9012 3456"
-                    value={cardNumber} onChange={e => setCardNumber(formatCard(e.target.value))}
-                    className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-colors"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Expiry Date</label>
-                    <input
-                      type="text" required placeholder="MM/YY"
-                      value={expiry} onChange={e => setExpiry(formatExpiry(e.target.value))}
-                      className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">CVV</label>
-                    <input
-                      type="text" required placeholder="123" maxLength={4}
-                      value={cvv} onChange={e => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Lock className="w-3.5 h-3.5" /> Your payment info is secure and encrypted
-                </div>
-
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm">{error}</div>
-                )}
-
-                <button type="submit" disabled={processing}
-                  className="w-full py-3.5 bg-[#1a2e4a] hover:bg-[#243d60] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors flex items-center justify-center gap-2">
-                  <Lock className="w-4 h-4" />
-                  {processing ? 'Processing…' : `Pay Rs. ${fmt(grandTotal)} LKR`}
-                </button>
-              </form>
+              <Elements stripe={stripePromise}>
+                <PaymentForm
+                  eventId={eventId}
+                  bookingData={bookingData}
+                  grandTotal={grandTotal}
+                  onSuccess={handlePaySuccess}
+                />
+              </Elements>
             </div>
 
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function PaymentForm({ eventId, bookingData, grandTotal, onSuccess }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setProcessing(true);
+    setError('');
+
+    try {
+      const allSeats = bookingData.seats;
+      const firstCat = allSeats[0]?.category;
+
+      // Step 1: Create Ticket & PaymentIntent
+      const res = await api.post('/tickets/purchase', {
+        eventId,
+        category: firstCat,
+        tier: firstCat,
+        seats: allSeats,
+      });
+      const { ticketId, clientSecret } = res.data;
+
+      // Step 2: Confirm Card Payment
+      const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: elements.getElement(CardElement) }
+      });
+
+      if (stripeError) {
+        setError(stripeError.message);
+        setProcessing(false);
+      } else if (paymentIntent.status === 'succeeded') {
+        // Step 3: Tell backend payment is confirmed
+        await api.patch(`/tickets/${ticketId}/confirm-payment`);
+        onSuccess(ticketId);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Payment failed. Please try again.');
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1.5">Card Details</label>
+        <div className="border border-slate-300 rounded-lg p-3 bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+          <CardElement options={{
+            style: {
+              base: { fontSize: '15px', color: '#1e293b', '::placeholder': { color: '#94a3b8' } },
+              invalid: { color: '#ef4444' }
+            }
+          }} />
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Test card: 4242 4242 4242 4242 · Any future date · Any CVC</p>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Lock className="w-3.5 h-3.5" /> Your payment info is secure and encrypted
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm">{error}</div>
+      )}
+
+      <button type="submit" disabled={!stripe || processing}
+        className="w-full py-3.5 bg-[#1a2e4a] hover:bg-[#243d60] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors flex items-center justify-center gap-2">
+        <Lock className="w-4 h-4" />
+        {processing ? 'Processing…' : `Pay Rs. ${fmt(grandTotal)} LKR`}
+      </button>
+    </form>
   );
 }
