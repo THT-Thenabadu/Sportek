@@ -3,11 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../lib/axios';
 import useAuthStore from '../store/useAuthStore';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-<<<<<<< Updated upstream
-import { ArrowLeft, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket } from 'lucide-react';
-=======
 import { ArrowLeft, CreditCard, Lock, Download, CheckCircle, Calendar, Clock, MapPin, Ticket, AlertTriangle } from 'lucide-react';
->>>>>>> Stashed changes
 import QRCode from 'qrcode';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
