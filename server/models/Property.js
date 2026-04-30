@@ -25,7 +25,8 @@ const propertySchema = new mongoose.Schema({
     timeSlot: {
       start: { type: String, required: true }
     }
-  }]
+  }],
+  bundledAssets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Asset' }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Property', propertySchema);

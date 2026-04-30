@@ -8,6 +8,8 @@ const assetSchema = new mongoose.Schema({
     required: true
   },
   assetType: { type: String, required: true }, // e.g. 'Tennis Racquet', 'Football'
+  image: { type: String, default: '' },
+  description: { type: String, default: '' },
   property: { type: mongoose.Schema.Types.ObjectId, ref: 'Property', required: true },
   quantity: { type: Number, default: 1 },
   availableQuantity: { type: Number, default: 1 },

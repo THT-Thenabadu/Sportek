@@ -4,9 +4,9 @@ const bookingSchema = new mongoose.Schema({
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   propertyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Property', required: true },
   date: { type: Date, required: true },
-  timeSlot: { 
-    start: { type: String, required: true }, 
-    end: { type: String, required: true } 
+  timeSlot: {
+    start: { type: String, required: true },
+    end: { type: String, required: true }
   },
   status: { type: String, enum: ['pending', 'pending_onsite', 'booked', 'active', 'ended', 'completed', 'cancelled'], default: 'pending' },
   paymentMethod: { type: String, enum: ['online', 'onsite'], default: 'online' },
@@ -23,7 +23,7 @@ const bookingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Generate unique booking token before saving
-bookingSchema.pre('save', async function() {
+bookingSchema.pre('save', async function () {
   if (!this.bookingToken && this.isNew) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let token = '';

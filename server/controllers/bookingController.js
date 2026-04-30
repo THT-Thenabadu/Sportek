@@ -78,7 +78,7 @@ const getAvailableSlots = async (req, res) => {
 
       const isBlocked = property.blockedSlots && property.blockedSlots.some(b => {
         const bDate = new Date(b.date);
-        bDate.setHours(0,0,0,0);
+        bDate.setHours(0, 0, 0, 0);
         return bDate.getTime() === targetDate.getTime() && b.timeSlot.start === slot.start;
       });
 
@@ -203,7 +203,7 @@ const createPaymentIntent = async (req, res) => {
         await asset.save();
         bundledIds.push(asset._id);
       }
-      
+
       if (bundledIds.length > 0) {
         booking.bundledAssets = bundledIds;
         await booking.save();
@@ -249,7 +249,7 @@ const stripeWebhook = async (req, res) => {
         const eventDoc = await EventModel.findById(eventId);
         if (eventDoc) {
           const selectedTier = eventDoc.ticketTiers.find(t => t.tier === tier);
-          
+
           if (selectedTier) {
             const ticket = await TicketModel.create({
               eventId,
@@ -328,7 +328,7 @@ const stripeWebhook = async (req, res) => {
       const booking = await Booking.findById(bookingId);
       if (booking) {
         booking.status = 'cancelled';
-        
+
         // Release bundled assets
         if (booking.bundledAssets && booking.bundledAssets.length > 0) {
           try {
@@ -484,10 +484,10 @@ const scanQR = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
-    // Time window validation — parse as UTC to match how booking.date is stored
+    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
     const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
-    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
+    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
     const now = new Date();
 
     // Valid from 30 minutes before the booking start
@@ -546,10 +546,10 @@ const checkinByToken = async (req, res) => {
       return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
     }
 
-    // Time window validation — parse as UTC to match how booking.date is stored
+    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
     const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00Z`);
-    const endDateTime   = new Date(`${datePart}T${booking.timeSlot.end}:00Z`);
+    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
+    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
     const now = new Date();
 
     // Valid from 30 minutes before the booking start
@@ -618,9 +618,9 @@ const getAllSecurityBookings = async (req, res) => {
     const bookings = await Booking.find({
       propertyId: { $in: propertyIds }
     })
-    .populate('customerId', 'name email')
-    .populate('propertyId', 'name')
-    .sort({ date: -1 }); // Sort by date, newest first
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name')
+      .sort({ date: -1 }); // Sort by date, newest first
 
     res.json(bookings);
   } catch (error) {

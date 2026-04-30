@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  getAvailableSlots, 
-  createPaymentIntent, 
-  stripeWebhook, 
-  getMyBookings, 
-  getPropertyBookings, 
-  markAttendance, 
+const {
+  getAvailableSlots,
+  createPaymentIntent,
+  stripeWebhook,
+  getMyBookings,
+  getPropertyBookings,
+  markAttendance,
   getBookingById,
   getUpcomingSecurityBookings,
   getCurrentSecurityBookings,
@@ -46,21 +46,21 @@ router.get('/reports', protect, authorize('securityOfficer'), async (req, res) =
     const properties = await Property.find({ ownerId });
     const propertyIds = properties.map(p => p._id);
 
-    const start = new Date(from); start.setHours(0,0,0,0);
-    const end   = new Date(to);   end.setHours(23,59,59,999);
+    const start = new Date(from); start.setHours(0, 0, 0, 0);
+    const end = new Date(to); end.setHours(23, 59, 59, 999);
 
     if (type === 'booking') {
       const bookings = await Booking.find({
         propertyId: { $in: propertyIds },
         date: { $gte: start, $lte: end }
-      }).populate('customerId','name email').populate('propertyId','name').sort({ date: 1 });
+      }).populate('customerId', 'name email').populate('propertyId', 'name').sort({ date: 1 });
 
-      const total     = bookings.length;
+      const total = bookings.length;
       const confirmed = bookings.filter(b => b.attendanceStatus === 'confirmed').length;
-      const noShow    = bookings.filter(b => b.attendanceStatus === 'noShow').length;
-      const pending   = bookings.filter(b => b.attendanceStatus === 'pending').length;
-      const revenue   = bookings.filter(b => ['booked','active','ended','completed'].includes(b.status))
-                                .reduce((s, b) => s + (b.totalAmount || 0), 0);
+      const noShow = bookings.filter(b => b.attendanceStatus === 'noShow').length;
+      const pending = bookings.filter(b => b.attendanceStatus === 'pending').length;
+      const revenue = bookings.filter(b => ['booked', 'active', 'ended', 'completed'].includes(b.status))
+        .reduce((s, b) => s + (b.totalAmount || 0), 0);
       return res.json({ type, from, to, total, confirmed, noShow, pending, revenue, rows: bookings });
     }
 
@@ -68,7 +68,7 @@ router.get('/reports', protect, authorize('securityOfficer'), async (req, res) =
       const bookings = await Booking.find({
         propertyId: { $in: propertyIds },
         date: { $gte: start, $lte: end }
-      }).populate('propertyId','name');
+      }).populate('propertyId', 'name');
 
       const facilityMap = {};
       properties.forEach(p => {
@@ -79,8 +79,8 @@ router.get('/reports', protect, authorize('securityOfficer'), async (req, res) =
         if (facilityMap[key]) {
           facilityMap[key].bookings++;
           if (b.attendanceStatus === 'confirmed') facilityMap[key].confirmed++;
-          if (b.attendanceStatus === 'noShow')    facilityMap[key].noShow++;
-          if (['booked','active','ended','completed'].includes(b.status))
+          if (b.attendanceStatus === 'noShow') facilityMap[key].noShow++;
+          if (['booked', 'active', 'ended', 'completed'].includes(b.status))
             facilityMap[key].revenue += b.totalAmount || 0;
         }
       });
@@ -118,10 +118,10 @@ router.get('/daily-report', protect, authorize('securityOfficer'), async (req, r
     const date = req.query.date || new Date().toISOString().split('T')[0];
     const start = new Date(date); const end = new Date(date); end.setDate(end.getDate() + 1);
     const bookings = await Booking.find({ date: { $gte: start, $lt: end } })
-      .populate('customerId','name email').populate('propertyId','name ownerId').sort('timeSlot.start');
+      .populate('customerId', 'name email').populate('propertyId', 'name ownerId').sort('timeSlot.start');
     const confirmed = bookings.filter(b => b.attendanceStatus === 'confirmed').length;
-    const noShow    = bookings.filter(b => b.attendanceStatus === 'noShow').length;
-    const pending   = bookings.filter(b => b.attendanceStatus === 'pending').length;
+    const noShow = bookings.filter(b => b.attendanceStatus === 'noShow').length;
+    const pending = bookings.filter(b => b.attendanceStatus === 'pending').length;
     res.json({ date, total: bookings.length, confirmed, noShow, pending, bookings });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
