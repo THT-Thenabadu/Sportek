@@ -135,11 +135,6 @@ export default function EventPayment() {
   const [ticketId, setTicketId] = useState('');
   const [error, setError] = useState('');
 
-
-<<<<<<< Updated upstream
-
-  // We will pass these directly to the Elements provider now
-=======
   // ── 15-minute payment hold timer ──
   const [holdSecsLeft, setHoldSecsLeft] = useState(null);
   const holdTimerRef = useRef(null);
@@ -180,8 +175,6 @@ export default function EventPayment() {
     api.post(`/seats/${eventId}/unlock`, {}).catch(() => {});
     navigate(`/events/${eventId}/seats`, { state: { expired: true } });
   }, [holdSecsLeft, eventId, navigate]);
-
->>>>>>> Stashed changes
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
     const stored = sessionStorage.getItem(`event_seats_${eventId}`);
@@ -197,43 +190,12 @@ export default function EventPayment() {
   const serviceCharge = bookingData ? bookingData.totalAmount * 0.05 : 0;
   const grandTotal = bookingData ? bookingData.totalAmount + serviceCharge : 0;
 
-<<<<<<< Updated upstream
   const handlePaySuccess = (newTicketId) => {
     setTicketId(newTicketId);
     sessionStorage.removeItem(`event_seats_${eventId}`);
+    sessionStorage.removeItem(`seat_hold_expires_${eventId}`);
+    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
     setSuccess(true);
-=======
-  const handlePay = async (e) => {
-    e.preventDefault();
-    if (!cardName.trim()) { setError('Please enter cardholder name.'); return; }
-    setError('');
-    setProcessing(true);
-    try {
-      const allSeats = bookingData.seats;
-      const firstCat = allSeats[0]?.category;
-      // Step 1: create ticket (pending)
-      const res = await api.post('/tickets/purchase', {
-        eventId,
-        category: firstCat,
-        tier: firstCat,
-        seats: allSeats,
-      });
-      const newTicketId = res.data.ticketId;
-
-      // Step 2: confirm payment (marks as paid + syncs soldQuantity)
-      await api.patch(`/tickets/${newTicketId}/confirm-payment`);
-
-      setTicketId(newTicketId);
-      sessionStorage.removeItem(`event_seats_${eventId}`);
-      sessionStorage.removeItem(`seat_hold_expires_${eventId}`);
-      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
-      setSuccess(true);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Payment failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
->>>>>>> Stashed changes
   };
 
   if (loading) return (

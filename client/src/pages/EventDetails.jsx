@@ -38,17 +38,8 @@ export default function EventDetails() {
 
   const handleBookNow = async (cat) => {
     if (!isAuthenticated) { navigate('/login'); return; }
-<<<<<<< Updated upstream
     // Always go to seat selection — works for both indoor (seat map) and outdoor (category selection)
     navigate(`/events/${id}/seats`);
-=======
-    if (event.venueType === 'indoor' && event.venueId) {
-      navigate(`/events/${id}/seats`);
-    } else {
-      const catIdx = cats.indexOf(cat);
-      navigate(`/events/${id}/book/${catIdx}`);
-    }
->>>>>>> Stashed changes
   };
 
   const handleSuccess = () => {
