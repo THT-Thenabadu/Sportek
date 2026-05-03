@@ -19,7 +19,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -46,6 +50,11 @@
           "photosPermission": "Allow Sportek to access your photos for uploading images."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3c6e593f-cf98-497b-8f90-23c31ed5ea32"
+      }
+    }
   }
 }

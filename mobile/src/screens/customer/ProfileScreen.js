@@ -30,8 +30,15 @@ function InfoRow({ icon, label, value, bgIndex = 0 }) {
   );
 }
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, logout } = useAuth();
+
+  const goToDashboard = () => {
+    if (user?.role === 'customer') navigation.navigate('Home');
+    else if (user?.role === 'propertyOwner') navigation.navigate('OwnerHome');
+    else if (user?.role === 'securityOfficer') navigation.navigate('ScanQR');
+    else if (user?.role === 'admin') navigation.navigate('AdminHome');
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -78,6 +85,12 @@ export default function ProfileScreen() {
             <InfoRow icon="school-outline" label="Institution" value={user.institution} bgIndex={3} />
           )}
         </View>
+
+        {/* Go to Dashboard */}
+        <TouchableOpacity style={styles.dashboardBtn} onPress={goToDashboard} activeOpacity={0.85}>
+          <Ionicons name="grid-outline" size={20} color="#ffffff" />
+          <Text style={styles.dashboardText}>Go to Dashboard</Text>
+        </TouchableOpacity>
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
@@ -204,5 +217,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     color: '#cbd5e1',
+  },
+  dashboardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#1d4ed8',
+    borderRadius: 14,
+    paddingVertical: 15,
+    marginBottom: 12,
+  },
+  dashboardText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

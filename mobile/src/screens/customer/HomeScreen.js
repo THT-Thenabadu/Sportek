@@ -159,6 +159,7 @@ export default function HomeScreen({ navigation }) {
               <FacilityCard
                 key={facility._id}
                 facility={facility}
+                hideBookButton={user?.role !== 'customer'}
                 onPress={() => navigation.navigate('FacilityDetail', { facility })}
               />
             ))
