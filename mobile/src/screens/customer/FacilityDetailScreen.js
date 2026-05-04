@@ -31,7 +31,7 @@ export default function FacilityDetailScreen({ route, navigation }) {
   }, [facility._id]);
 
   const imageUri = facility.images?.[0] || null;
-  const availableSlots = Array.isArray(slots) ? slots.filter((s) => s.status === 'available') : [];
+  const availableSlots = Array.isArray(slots) ? slots.filter((s) => s.state === 'Available') : [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -108,14 +108,11 @@ export default function FacilityDetailScreen({ route, navigation }) {
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.bookBtn, availableSlots.length === 0 && styles.bookBtnDisabled]}
-              onPress={() => navigation.navigate('BookingFlow', { facility, slots: availableSlots })}
-              disabled={availableSlots.length === 0}
+              style={styles.bookBtn}
+              onPress={() => navigation.navigate('BookingFlow', { facility })}
             >
               <Ionicons name="calendar" size={18} color="#ffffff" />
-              <Text style={styles.bookBtnText}>
-                {availableSlots.length > 0 ? 'Book Now' : 'No Slots Available'}
-              </Text>
+              <Text style={styles.bookBtnText}>Book Now</Text>
             </TouchableOpacity>
           )}
         </View>
