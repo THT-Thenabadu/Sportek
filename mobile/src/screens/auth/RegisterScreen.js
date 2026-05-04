@@ -54,6 +54,16 @@ export default function RegisterScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Back button */}
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.navigate('Landing')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1d4ed8" />
+          <Text style={styles.backBtnText}>Back</Text>
+        </TouchableOpacity>
+
         {/* Logo */}
         <View style={styles.logoArea}>
           <View style={styles.logoRow}>
@@ -206,6 +216,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 40,
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 24,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#eff6ff',
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1d4ed8',
   },
 
   /* Logo */
