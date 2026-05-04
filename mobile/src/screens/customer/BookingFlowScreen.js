@@ -1,28 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../lib/axios';
-// <<<<<<< mobile-featureBooking
-import { TextInput } from 'react-native';
-// =======
-// >>>>>>> ReactNative/Mobile
 import { useAuth } from '../../store/useAuthStore';
 import io from 'socket.io-client';
 
 export default function BookingFlowScreen({ route, navigation }) {
   const { facility, slots: initialSlots } = route?.params || {};
   const { user } = useAuth();
-// <<<<<<< mobile-featureBooking
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState(Array.isArray(initialSlots) ? initialSlots : []);
   const [loadingSlots, setLoadingSlots] = useState(false);
-
-// =======
-//   const slots = Array.isArray(initialSlots) ? initialSlots : [];
-// >>>>>>> ReactNative/Mobile
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('onsite');
@@ -175,7 +166,7 @@ export default function BookingFlowScreen({ route, navigation }) {
       propertyId: facility._id,
       date: selectedDate,
       timeSlotStart: selectedSlot.start,
-      userId: user._id
+      userId: user._id,
     });
   };
 
@@ -204,24 +195,21 @@ export default function BookingFlowScreen({ route, navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-              // Simulating payment process if card is selected
               if (paymentMethod === 'card') {
                 await new Promise(resolve => setTimeout(resolve, 1500));
               }
 
-              // Use create-onsite for now as mock or replace with real payment intent in future
               await api.post('/bookings/create-onsite', {
                 propertyId: facility._id,
                 date: lockedDateRef.current || selectedDate,
                 timeSlotStart: selectedSlot.start,
                 timeSlotEnd: selectedSlot.end,
-                paymentMethod: paymentMethod
+                paymentMethod: paymentMethod,
               });
 
               setLockedByMe(false);
               setTimeLeft(null);
 
-              // Update local state to show it as Booked immediately
               setSlots((prevSlots) =>
                 prevSlots.map((s) =>
                   s.start === selectedSlot.start ? { ...s, state: 'Booked' } : s
@@ -234,7 +222,7 @@ export default function BookingFlowScreen({ route, navigation }) {
                 `Your booking at ${facility.name} has been confirmed.\n${paymentMethod === 'card' ? 'Payment successful.' : `Pay LKR ${facility.pricePerHour} on arrival.`}`,
                 [
                   { text: 'OK', style: 'cancel' },
-                  { text: 'View My Bookings', onPress: () => navigation.navigate('Bookings') }
+                  { text: 'View My Bookings', onPress: () => navigation.navigate('Bookings') },
                 ]
               );
             } catch (err) {
@@ -271,7 +259,9 @@ export default function BookingFlowScreen({ route, navigation }) {
           <Text style={styles.facilityName}>{facility.name}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="location-outline" size={14} color="#64748b" />
-            <Text style={styles.metaText}>{typeof facility.location === 'object' ? facility.location?.address : facility.location}</Text>
+            <Text style={styles.metaText}>
+              {typeof facility.location === 'object' ? facility.location?.address : facility.location}
+            </Text>
           </View>
         </View>
 
@@ -304,7 +294,7 @@ export default function BookingFlowScreen({ route, navigation }) {
               const isBooked = slot.state === 'Booked';
               const isBlocked = slot.state === 'Blocked';
               const isPending = slot.state === 'Pending';
-              
+
               let btnStyle = styles.slotBtnAvailable;
               let txtStyle = styles.slotTextAvailable;
               let iconName = 'time-outline';
@@ -365,104 +355,106 @@ export default function BookingFlowScreen({ route, navigation }) {
         )}
 
         {selectedSlot && !lockedByMe && (
-           <View style={{ marginTop: 24, marginBottom: 24 }}>
-             <TouchableOpacity style={styles.holdBtn} onPress={handleHoldSlot}>
-               <Text style={styles.holdBtnText}>Hold Slot & Proceed to Payment</Text>
-             </TouchableOpacity>
-           </View>
+          <View style={{ marginTop: 24, marginBottom: 24 }}>
+            <TouchableOpacity style={styles.holdBtn} onPress={handleHoldSlot}>
+              <Text style={styles.holdBtnText}>Hold Slot & Proceed to Payment</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
-        {/* Payment Method Selection */}
+        {/* Payment Method Selection — only shown after slot is locked */}
         {lockedByMe && (
           <View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <Text style={styles.sectionTitle}>Payment Method</Text>
               {timeLeft !== null && (
-                 <Text style={[styles.timerText, timeLeft <= 30 && { color: '#ef4444' }]}>
-                   ⏳ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                 </Text>
+                <Text style={[styles.timerText, timeLeft <= 30 && { color: '#ef4444' }]}>
+                  ⏳ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                </Text>
               )}
             </View>
-        <View style={styles.paymentMethodContainer}>
-          <TouchableOpacity
-            style={[styles.methodBtn, paymentMethod === 'card' && styles.methodBtnActive]}
-            onPress={() => setPaymentMethod('card')}
-          >
-            <Ionicons name="card-outline" size={24} color={paymentMethod === 'card' ? '#1d4ed8' : '#64748b'} />
-            <Text style={[styles.methodText, paymentMethod === 'card' && styles.methodTextActive]}>Card</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.methodBtn, paymentMethod === 'onsite' && styles.methodBtnActive]}
-            onPress={() => setPaymentMethod('onsite')}
-          >
-            <Ionicons name="cash-outline" size={24} color={paymentMethod === 'onsite' ? '#1d4ed8' : '#64748b'} />
-            <Text style={[styles.methodText, paymentMethod === 'onsite' && styles.methodTextActive]}>On-Site</Text>
-          </TouchableOpacity>
-        </View>
 
-        {paymentMethod === 'card' && (
-          <View style={styles.cardInputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Card Number"
-              keyboardType="numeric"
-              maxLength={16}
-              value={cardDetails.number}
-              onChangeText={(text) => setCardDetails({ ...cardDetails, number: text })}
-            />
-            <View style={styles.cardRow}>
-              <TextInput
-                style={[styles.input, { flex: 1, marginRight: 8 }]}
-                placeholder="MM/YY"
-                keyboardType="numeric"
-                maxLength={5}
-                value={cardDetails.expiry}
-                onChangeText={(text) => setCardDetails({ ...cardDetails, expiry: text })}
-              />
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="CVV"
-                keyboardType="numeric"
-                maxLength={3}
-                value={cardDetails.cvv}
-                onChangeText={(text) => setCardDetails({ ...cardDetails, cvv: text })}
-              />
+            <View style={styles.paymentMethodContainer}>
+              <TouchableOpacity
+                style={[styles.methodBtn, paymentMethod === 'card' && styles.methodBtnActive]}
+                onPress={() => setPaymentMethod('card')}
+              >
+                <Ionicons name="card-outline" size={24} color={paymentMethod === 'card' ? '#1d4ed8' : '#64748b'} />
+                <Text style={[styles.methodText, paymentMethod === 'card' && styles.methodTextActive]}>Card</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.methodBtn, paymentMethod === 'onsite' && styles.methodBtnActive]}
+                onPress={() => setPaymentMethod('onsite')}
+              >
+                <Ionicons name="cash-outline" size={24} color={paymentMethod === 'onsite' ? '#1d4ed8' : '#64748b'} />
+                <Text style={[styles.methodText, paymentMethod === 'onsite' && styles.methodTextActive]}>On-Site</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        )}
 
-        {/* Price Summary */}
-        <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>Amount Due {paymentMethod === 'onsite' ? '(on arrival)' : '(now)'}</Text>
-          <Text style={styles.priceAmount}>LKR {facility.pricePerHour}</Text>
-          <View style={styles.paymentBadge}>
-            <Ionicons name={paymentMethod === 'card' ? "card-outline" : "cash-outline"} size={14} color="#7c3aed" />
-            <Text style={styles.paymentText}>{paymentMethod === 'card' ? 'Pay Now' : 'Pay On-Site'}</Text>
-          </View>
-        </View>
+            {paymentMethod === 'card' && (
+              <View style={styles.cardInputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Card Number"
+                  keyboardType="numeric"
+                  maxLength={16}
+                  value={cardDetails.number}
+                  onChangeText={(text) => setCardDetails({ ...cardDetails, number: text })}
+                />
+                <View style={styles.cardRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginRight: 8 }]}
+                    placeholder="MM/YY"
+                    keyboardType="numeric"
+                    maxLength={5}
+                    value={cardDetails.expiry}
+                    onChangeText={(text) => setCardDetails({ ...cardDetails, expiry: text })}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="CVV"
+                    keyboardType="numeric"
+                    maxLength={3}
+                    value={cardDetails.cvv}
+                    onChangeText={(text) => setCardDetails({ ...cardDetails, cvv: text })}
+                  />
+                </View>
+              </View>
+            )}
 
-        {/* Confirm Button */}
-        <TouchableOpacity
-          style={[
-            styles.confirmBtn,
-            (!selectedSlot || loading) && styles.confirmBtnDisabled,
-          ]}
-          onPress={handleConfirmBooking}
-          disabled={!selectedSlot || loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-              <Text style={styles.confirmBtnText}>Confirm Booking {paymentMethod === 'card' ? `& Pay LKR ${facility.pricePerHour}` : ''}</Text>
-            </>
-          )}
-        </TouchableOpacity>
+            {/* Price Summary */}
+            <View style={styles.priceCard}>
+              <Text style={styles.priceLabel}>Amount Due {paymentMethod === 'onsite' ? '(on arrival)' : '(now)'}</Text>
+              <Text style={styles.priceAmount}>LKR {facility.pricePerHour}</Text>
+              <View style={styles.paymentBadge}>
+                <Ionicons name={paymentMethod === 'card' ? 'card-outline' : 'cash-outline'} size={14} color="#7c3aed" />
+                <Text style={styles.paymentText}>{paymentMethod === 'card' ? 'Pay Now' : 'Pay On-Site'}</Text>
+              </View>
+            </View>
 
-        <Text style={styles.disclaimer}>
-          {paymentMethod === 'card' ? '* Your card will be charged securely via our mock gateway.' : '* Payment will be collected on-site before your session begins.'}
-        </Text>
+            {/* Confirm Button */}
+            <TouchableOpacity
+              style={[styles.confirmBtn, (!selectedSlot || loading) && styles.confirmBtnDisabled]}
+              onPress={handleConfirmBooking}
+              disabled={!selectedSlot || loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+                  <Text style={styles.confirmBtnText}>
+                    Confirm Booking {paymentMethod === 'card' ? `& Pay LKR ${facility.pricePerHour}` : ''}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.disclaimer}>
+              {paymentMethod === 'card'
+                ? '* Your card will be charged securely via our mock gateway.'
+                : '* Payment will be collected on-site before your session begins.'}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -499,30 +491,11 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  facilityName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 8,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
+  facilityName: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   metaText: { fontSize: 13, color: '#64748b' },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 12,
-  },
-  noSlots: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 8,
-  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 12 },
+  noSlots: { alignItems: 'center', paddingVertical: 32, gap: 8 },
   noSlotsText: { fontSize: 13, color: '#94a3b8' },
   slotsGrid: {
     flexDirection: 'row',
@@ -546,22 +519,15 @@ const styles = StyleSheet.create({
   slotBtnBlocked: { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
   slotBtnPending: { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
   slotBtnSelected: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
-
   slotText: { fontSize: 13, fontWeight: '700' },
   slotTextAvailable: { color: '#1d4ed8' },
   slotTextBooked: { color: '#64748b' },
   slotTextBlocked: { color: '#ef4444' },
   slotTextPending: { color: '#d97706' },
   slotTextSelected: { color: '#ffffff' },
-
   slotStateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   slotStateText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-
-  paymentMethodContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
+  paymentMethodContainer: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   methodBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -574,21 +540,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#ffffff',
   },
-  methodBtnActive: {
-    borderColor: '#1d4ed8',
-    backgroundColor: '#eff6ff',
-  },
-  methodText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  methodTextActive: {
-    color: '#1d4ed8',
-  },
-  cardInputContainer: {
-    marginBottom: 20,
-  },
+  methodBtnActive: { borderColor: '#1d4ed8', backgroundColor: '#eff6ff' },
+  methodText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  methodTextActive: { color: '#1d4ed8' },
+  cardInputContainer: { marginBottom: 20 },
   input: {
     backgroundColor: '#ffffff',
     borderWidth: 1,
@@ -599,9 +554,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#1e293b',
   },
-  cardRow: {
-    flexDirection: 'row',
-  },
+  cardRow: { flexDirection: 'row' },
   priceCard: {
     backgroundColor: '#eff6ff',
     borderRadius: 14,
@@ -609,17 +562,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     alignItems: 'center',
   },
-  priceLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 4,
-  },
-  priceAmount: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1d4ed8',
-    marginBottom: 8,
-  },
+  priceLabel: { fontSize: 12, color: '#64748b', marginBottom: 4 },
+  priceAmount: { fontSize: 28, fontWeight: '800', color: '#1d4ed8', marginBottom: 8 },
   paymentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -629,11 +573,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
-  paymentText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#7c3aed',
-  },
+  paymentText: { fontSize: 12, fontWeight: '600', color: '#7c3aed' },
   holdBtn: {
     backgroundColor: '#f59e0b',
     borderRadius: 14,
@@ -645,16 +585,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  holdBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  timerText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#d97706',
-  },
+  holdBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  timerText: { fontSize: 16, fontWeight: '800', color: '#d97706' },
   confirmBtn: {
     backgroundColor: '#1d4ed8',
     borderRadius: 14,
@@ -669,50 +601,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  confirmBtnDisabled: {
-    backgroundColor: '#94a3b8',
-    shadowColor: 'transparent',
-    elevation: 0,
-  },
-  confirmBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  disclaimer: {
-    marginTop: 12,
-    fontSize: 12,
-    color: '#94a3b8',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 15,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  backBtn: {
-    backgroundColor: '#1d4ed8',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  backBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  confirmBtnDisabled: { backgroundColor: '#94a3b8', shadowColor: 'transparent', elevation: 0 },
+  confirmBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  disclaimer: { marginTop: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginTop: 16, marginBottom: 8 },
+  errorText: { fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  backBtn: { backgroundColor: '#1d4ed8', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
+  backBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
 });
