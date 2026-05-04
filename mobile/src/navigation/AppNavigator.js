@@ -31,6 +31,7 @@ export default function AppNavigator() {
       case 'securityOfficer':
         return <SecurityStack />;
       case 'admin':
+      case 'superAdmin':
         return <AdminDrawer />;
       default:
         return <CustomerTabs />;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,21 +14,18 @@ function CurrentBookingItem({ booking, onEndSession }) {
   const time = booking.timeSlot ? `${booking.timeSlot.start} – ${booking.timeSlot.end}` : '—';
 
   const handleEnd = async () => {
-    Alert.alert(
-      'End Session',
-      `End session for ${customer} at ${facility}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Session', style: 'destructive',
-          onPress: async () => {
-            setEnding(true);
-            await onEndSession(booking._id);
-            setEnding(false);
-          },
-        },
-      ]
-    );
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm(`End session for ${customer} at ${facility}?`)
+      : await new Promise(resolve =>
+          Alert.alert('End Session', `End session for ${customer} at ${facility}?`, [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'End Session', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!confirmed) return;
+    setEnding(true);
+    await onEndSession(booking._id);
+    setEnding(false);
   };
 
   return (
@@ -90,7 +87,8 @@ export default function CurrentBookingsScreen() {
       await api.patch(`/bookings/${bookingId}/end-session`);
       setBookings((prev) => prev.filter((b) => b._id !== bookingId));
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to end session.');
+      const msg = err.response?.data?.message || 'Failed to end session.';
+      Platform.OS === 'web' ? alert(msg) : Alert.alert('Error', msg);
     }
   };
 

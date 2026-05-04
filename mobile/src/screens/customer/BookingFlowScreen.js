@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -12,246 +13,248 @@ import { TextInput } from 'react-native';
 import { useAuth } from '../../store/useAuthStore';
 import io from 'socket.io-client';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const pad = n => String(n).padStart(2, '0');
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+// Build next 7 days for date picker
+const buildDays = () => {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    days.push({
+      label: i === 0 ? 'Today' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }),
+      value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    });
+  }
+  return days;
+};
+
+const DAYS = buildDays();
+
+// Slot state config
+const SLOT_CONFIG = {
+  Available: { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8', label: '' },
+  Pending:   { bg: '#fef9c3', border: '#fde047', text: '#a16207', label: 'Held' },
+  Booked:    { bg: '#fee2e2', border: '#fca5a5', text: '#dc2626', label: 'Booked' },
+  Blocked:   { bg: '#f1f5f9', border: '#cbd5e1', text: '#94a3b8', label: 'Blocked' },
+};
+
+// ── Countdown badge ───────────────────────────────────────────────────────────
+function CountdownBadge({ expiresAt }) {
+  const [secs, setSecs] = useState(() => Math.max(0, Math.round((new Date(expiresAt) - Date.now()) / 1000)));
+  useEffect(() => {
+    if (secs <= 0) return;
+    const t = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  if (secs <= 0) return null;
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return (
+    <Text style={styles.countdownText}>{m}:{pad(s)}</Text>
+  );
+}
+
+// ── Main Screen ───────────────────────────────────────────────────────────────
 export default function BookingFlowScreen({ route, navigation }) {
-  const { facility, slots: initialSlots } = route?.params || {};
+  const { facility } = route?.params || {};
   const { user } = useAuth();
-// <<<<<<< mobile-featureBooking
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [slots, setSlots] = useState(Array.isArray(initialSlots) ? initialSlots : []);
-  const [loadingSlots, setLoadingSlots] = useState(false);
 
-// =======
-//   const slots = Array.isArray(initialSlots) ? initialSlots : [];
-// >>>>>>> ReactNative/Mobile
+  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('onsite');
-  const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvv: '' });
-
-  const [socket, setSocket] = useState(null);
   const [lockedByMe, setLockedByMe] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(null);   // seconds for MY lock countdown
   const [slotLockInfo, setSlotLockInfo] = useState({});
-  const [tick, setTick] = useState(0);
+  const [step, setStep] = useState(1);              // 1 = pick slot, 2 = confirm
+  const [booking, setBooking] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+
+  const socketRef = useRef(null);
+  const timerRef = useRef(null);
   const lockedDateRef = useRef(null);
-  const selectedDateRef = useRef(selectedDate);
 
+  // ── Fetch slots ─────────────────────────────────────────────────────────────
+  const fetchSlots = useCallback(() => {
+    if (!facility?._id) return;
+    setLoadingSlots(true);
+    api.get(`/bookings/slots/${facility._id}`, { params: { date: selectedDate } })
+      .then(r => {
+        const fetched = r.data.slots ?? r.data;
+        setSlots(fetched);
+        const lockMap = {};
+        fetched.forEach(sl => {
+          if (sl.state === 'Pending' && sl.lockExpiresAt) lockMap[sl.start] = sl.lockExpiresAt;
+        });
+        setSlotLockInfo(lockMap);
+      })
+      .catch(err => console.log('Slot fetch error:', err.message))
+      .finally(() => setLoadingSlots(false));
+  }, [facility?._id, selectedDate]);
+
+  useEffect(() => { fetchSlots(); }, [fetchSlots]);
+
+  // ── Socket.io / polling ─────────────────────────────────────────────────────
   useEffect(() => {
-    selectedDateRef.current = selectedDate;
-  }, [selectedDate]);
+    if (!facility?._id) return;
 
-  useEffect(() => {
-    fetchSlotsForDate(selectedDate);
-  }, []);
+    let socketInstance = null;
 
-  // Timer tick for countdown rendering
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
+    const setupSocket = async () => {
+      try {
+        // Dynamically import socket.io-client — works on native, may fail on web
+        const { default: io } = await import('socket.io-client');
+        const baseUrl = api.defaults.baseURL?.replace('/api', '') || 'http://localhost:5000';
+        const s = io(baseUrl, { transports: ['websocket'] });
+        socketRef.current = s;
 
-  // Initialize Socket.io
-  useEffect(() => {
-    const socketUrl = api.defaults.baseURL?.replace('/api', '') || 'http://192.168.8.195:8000';
-    const s = io(socketUrl);
-    setSocket(s);
+        s.emit('join_property_room', facility._id);
 
-    s.emit('join_property_room', facility._id);
+        s.on('slot_locked', ({ date, timeSlotStart, expiresAt }) => {
+          if (date !== selectedDate) return;
+          setSlots(prev => prev.map(sl =>
+            sl.start === timeSlotStart ? { ...sl, state: 'Pending', lockExpiresAt: expiresAt } : sl
+          ));
+          setSlotLockInfo(prev => ({ ...prev, [timeSlotStart]: expiresAt }));
+        });
 
-    s.on('slot_locked', ({ date, timeSlotStart, expiresAt }) => {
-      if (date !== selectedDateRef.current) return;
-      setSlots((prev) =>
-        prev.map((sl) =>
-          sl.start === timeSlotStart
-            ? { ...sl, state: 'Pending', lockExpiresAt: expiresAt }
-            : sl
-        )
-      );
-      setSlotLockInfo((prev) => ({ ...prev, [timeSlotStart]: expiresAt }));
-    });
+        s.on('slot_released', ({ date, timeSlotStart }) => {
+          if (date !== selectedDate) return;
+          setSlots(prev => prev.map(sl =>
+            sl.start === timeSlotStart ? { ...sl, state: 'Available', lockExpiresAt: null } : sl
+          ));
+          setSlotLockInfo(prev => { const n = { ...prev }; delete n[timeSlotStart]; return n; });
+        });
 
-    s.on('slot_released', ({ date, timeSlotStart }) => {
-      if (date !== selectedDateRef.current) return;
-      setSlots((prev) =>
-        prev.map((sl) =>
-          sl.start === timeSlotStart
-            ? { ...sl, state: 'Available', lockExpiresAt: null }
-            : sl
-        )
-      );
-      setSlotLockInfo((prev) => {
-        const n = { ...prev };
-        delete n[timeSlotStart];
-        return n;
-      });
-    });
+        s.on('slot_confirmed', ({ date, timeSlotStart }) => {
+          if (date && date !== selectedDate) return;
+          setSlots(prev => prev.map(sl =>
+            sl.start === timeSlotStart ? { ...sl, state: 'Booked', lockExpiresAt: null } : sl
+          ));
+          setSlotLockInfo(prev => { const n = { ...prev }; delete n[timeSlotStart]; return n; });
+        });
 
-    s.on('slot_confirmed', ({ date, timeSlotStart }) => {
-      if (date && date !== selectedDateRef.current) return;
-      setSlots((prev) =>
-        prev.map((sl) =>
-          sl.start === timeSlotStart
-            ? { ...sl, state: 'Booked', lockExpiresAt: null }
-            : sl
-        )
-      );
-      setSlotLockInfo((prev) => {
-        const n = { ...prev };
-        delete n[timeSlotStart];
-        return n;
-      });
-    });
+        s.on('lock_success', ({ expiresAt }) => {
+          const secsLeft = Math.round((new Date(expiresAt) - Date.now()) / 1000);
+          setTimeLeft(secsLeft);
+          setLockedByMe(true);
+          lockedDateRef.current = selectedDate;
+          if (timerRef.current) clearInterval(timerRef.current);
+          timerRef.current = setInterval(() => {
+            setTimeLeft(prev => {
+              if (prev <= 1) {
+                clearInterval(timerRef.current);
+                setLockedByMe(false);
+                setSelectedSlot(null);
+                setStep(1);
+                fetchSlots();
+                return null;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        });
 
-    s.on('lock_success', ({ expiresAt }) => {
-      const secsLeft = Math.max(0, Math.round((new Date(expiresAt) - Date.now()) / 1000));
-      setTimeLeft(secsLeft);
-      setLockedByMe(true);
-      lockedDateRef.current = selectedDateRef.current;
-    });
+        s.on('lock_error', ({ message }) => {
+          const msg = message || 'This slot was just taken. Please choose another.';
+          Platform.OS === 'web' ? alert(msg) : Alert.alert('Slot Unavailable', msg);
+          setSelectedSlot(null);
+          fetchSlots();
+        });
 
-    s.on('lock_error', ({ message }) => {
-      Alert.alert('Hold Failed', message);
-      setSelectedSlot(null);
-    });
+        socketInstance = s;
+      } catch (e) {
+        // Socket.io not available (web) — fall back to polling every 10s
+        console.log('Socket.io unavailable, using polling');
+        const pollInterval = setInterval(() => fetchSlots(), 10000);
+        socketInstance = { disconnect: () => clearInterval(pollInterval) };
+      }
+    };
+
+    setupSocket();
 
     return () => {
-      s.emit('leave_property_room', facility._id);
-      s.disconnect();
+      socketInstance?.disconnect?.();
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [facility._id]);
+  }, [facility?._id, selectedDate]);
 
-  // Countdown logic for the active lock
-  useEffect(() => {
-    if (!lockedByMe || timeLeft === null) return;
-    if (timeLeft <= 0) {
-      setLockedByMe(false);
-      setSelectedSlot(null);
-      Alert.alert('Hold Expired', 'Your 5-minute hold on this slot has expired. Please try again.');
-      fetchSlotsForDate(selectedDateRef.current);
-      return;
-    }
-    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [lockedByMe, timeLeft]);
-
-  const fetchSlotsForDate = async (dateStr) => {
-    setLoadingSlots(true);
-    setSlots([]);
-    setSelectedSlot(null);
-    try {
-      const res = await api.get(`/bookings/slots/${facility._id}?date=${dateStr}`);
-      const slotsData = Array.isArray(res.data) ? res.data : (res.data?.slots || []);
-      setSlots(slotsData);
-
-      const lockMap = {};
-      slotsData.forEach((sl) => {
-        if (sl.state === 'Pending' && sl.lockExpiresAt) {
-          lockMap[sl.start] = sl.lockExpiresAt;
-        }
+  // ── Select a slot ───────────────────────────────────────────────────────────
+  const handleSelectSlot = (slot) => {
+    if (slot.state !== 'Available') return;
+    setSelectedSlot(slot);
+    lockedDateRef.current = selectedDate;
+    // Emit lock via socket if available, otherwise just proceed
+    if (socketRef.current?.emit) {
+      socketRef.current.emit('lock_slot', {
+        propertyId: facility._id,
+        date: selectedDate,
+        timeSlotStart: slot.start,
+        userId: user._id,
       });
-      setSlotLockInfo(lockMap);
-    } catch (e) {
-      console.log('Error fetching slots:', e.message);
+    } else {
+      // No socket — set a manual 120s countdown and go to step 2
+      setLockedByMe(true);
+      setTimeLeft(120);
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            setLockedByMe(false);
+            setSelectedSlot(null);
+            setStep(1);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    setStep(2);
+  };
+
+  // ── Confirm on-site booking ─────────────────────────────────────────────────
+  const handleConfirm = async () => {
+    if (!selectedSlot) return;
+    setConfirming(true);
+    try {
+      const res = await api.post('/bookings/create-onsite', {
+        propertyId: facility._id,
+        date: lockedDateRef.current || selectedDate,
+        timeSlotStart: selectedSlot.start,
+        timeSlotEnd: selectedSlot.end,
+      });
+      setBooking(res.data);
+      if (timerRef.current) clearInterval(timerRef.current);
+      setStep(3);
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Booking failed. Please try again.';
+      Platform.OS === 'web' ? alert(msg) : Alert.alert('Booking Failed', msg);
     } finally {
-      setLoadingSlots(false);
+      setConfirming(false);
     }
   };
 
-  const handleDateChange = (days) => {
-    if (lockedByMe) {
-      Alert.alert('Action Blocked', 'You have a slot held. Please complete or cancel it before changing the date.');
-      return;
-    }
-    const currentDate = new Date(selectedDate);
-    currentDate.setDate(currentDate.getDate() + days);
-    const newDateStr = currentDate.toISOString().split('T')[0];
-    setSelectedDate(newDateStr);
-    fetchSlotsForDate(newDateStr);
+  // ── Cancel slot selection ───────────────────────────────────────────────────
+  const handleCancel = () => {
+    setSelectedSlot(null);
+    setLockedByMe(false);
+    setTimeLeft(null);
+    setStep(1);
+    if (timerRef.current) clearInterval(timerRef.current);
+    fetchSlots();
   };
 
-  const handleHoldSlot = () => {
-    if (!socket || !user) return;
-    socket.emit('lock_slot', {
-      propertyId: facility._id,
-      date: selectedDate,
-      timeSlotStart: selectedSlot.start,
-      userId: user._id
-    });
-  };
-
-  const handleConfirmBooking = async () => {
-    if (!selectedSlot) {
-      Alert.alert('Select a time slot', 'Please choose a time slot before confirming.');
-      return;
-    }
-
-    if (paymentMethod === 'card') {
-      if (!cardDetails.number || !cardDetails.expiry || !cardDetails.cvv) {
-        Alert.alert('Invalid Card', 'Please enter your card details.');
-        return;
-      }
-    }
-
-    const paymentText = paymentMethod === 'card' ? 'Pay by Card' : 'Pay on Arrival';
-
-    Alert.alert(
-      'Confirm Booking',
-      `Book ${facility.name}\n${selectedDate}\n${selectedSlot.start} – ${selectedSlot.end}\n\nPayment: LKR ${facility.pricePerHour} (${paymentText})`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              // Simulating payment process if card is selected
-              if (paymentMethod === 'card') {
-                await new Promise(resolve => setTimeout(resolve, 1500));
-              }
-
-              // Use create-onsite for now as mock or replace with real payment intent in future
-              await api.post('/bookings/create-onsite', {
-                propertyId: facility._id,
-                date: lockedDateRef.current || selectedDate,
-                timeSlotStart: selectedSlot.start,
-                timeSlotEnd: selectedSlot.end,
-                paymentMethod: paymentMethod
-              });
-
-              setLockedByMe(false);
-              setTimeLeft(null);
-
-              // Update local state to show it as Booked immediately
-              setSlots((prevSlots) =>
-                prevSlots.map((s) =>
-                  s.start === selectedSlot.start ? { ...s, state: 'Booked' } : s
-                )
-              );
-              setSelectedSlot(null);
-
-              Alert.alert(
-                '🎉 Booking Confirmed!',
-                `Your booking at ${facility.name} has been confirmed.\n${paymentMethod === 'card' ? 'Payment successful.' : `Pay LKR ${facility.pricePerHour} on arrival.`}`,
-                [
-                  { text: 'OK', style: 'cancel' },
-                  { text: 'View My Bookings', onPress: () => navigation.navigate('Bookings') }
-                ]
-              );
-            } catch (err) {
-              Alert.alert('Booking Failed', err.response?.data?.message || 'Could not complete booking.');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
+  // ── Access guard ────────────────────────────────────────────────────────────
   if (user?.role !== 'customer') {
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <View style={styles.errorContainer}>
+        <View style={styles.center}>
           <Ionicons name="lock-closed-outline" size={64} color="#94a3b8" />
           <Text style={styles.errorTitle}>Access Denied</Text>
           <Text style={styles.errorText}>Booking is only available for customers.</Text>
@@ -263,206 +266,196 @@ export default function BookingFlowScreen({ route, navigation }) {
     );
   }
 
+  // ── Step 3: Success ─────────────────────────────────────────────────────────
+  if (step === 3 && booking) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.successCard}>
+            <View style={styles.successIcon}>
+              <Ionicons name="checkmark-circle" size={64} color="#16a34a" />
+            </View>
+            <Text style={styles.successTitle}>Booking Confirmed!</Text>
+            <Text style={styles.successSub}>Your slot has been reserved.</Text>
+
+            <View style={styles.bookingDetails}>
+              <DetailRow icon="business-outline" label="Facility" value={facility.name} />
+              <DetailRow icon="calendar-outline" label="Date" value={lockedDateRef.current || selectedDate} />
+              <DetailRow icon="time-outline" label="Time" value={`${selectedSlot.start} – ${selectedSlot.end}`} />
+              <DetailRow icon="cash-outline" label="Payment" value={`LKR ${facility.pricePerHour} (On-site)`} />
+              {booking.passkey && <DetailRow icon="key-outline" label="Passkey" value={booking.passkey} highlight />}
+            </View>
+
+            <Text style={styles.successNote}>
+              Show your passkey to the security officer on arrival.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={() => navigation.navigate('Bookings')}
+            >
+              <Ionicons name="list-outline" size={18} color="#fff" />
+              <Text style={styles.confirmBtnText}>View My Bookings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.homeBtn}
+              onPress={() => navigation.navigate('Home')}
+            >
+              <Text style={styles.homeBtnText}>Back to Home</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Step 2: Confirm slot ────────────────────────────────────────────────────
+  if (step === 2 && selectedSlot) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <ScrollView contentContainerStyle={styles.content}>
+          {/* Lock timer */}
+          {timeLeft !== null && (
+            <View style={styles.timerBanner}>
+              <Ionicons name="timer-outline" size={18} color="#a16207" />
+              <Text style={styles.timerText}>
+                Slot held for{' '}
+                <Text style={styles.timerBold}>
+                  {Math.floor(timeLeft / 60)}:{pad(timeLeft % 60)}
+                </Text>
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.summaryCard}>
+            <Text style={styles.facilityName}>{facility.name}</Text>
+            <DetailRow icon="calendar-outline" label="Date" value={selectedDate} />
+            <DetailRow icon="time-outline" label="Time" value={`${selectedSlot.start} – ${selectedSlot.end}`} />
+            <DetailRow icon="location-outline" label="Location"
+              value={typeof facility.location === 'object' ? facility.location?.address : facility.location} />
+          </View>
+
+          <View style={styles.priceCard}>
+            <Text style={styles.priceLabel}>Amount Due (on arrival)</Text>
+            <Text style={styles.priceAmount}>LKR {facility.pricePerHour}</Text>
+            <View style={styles.paymentBadge}>
+              <Ionicons name="cash-outline" size={14} color="#7c3aed" />
+              <Text style={styles.paymentText}>Pay On-Site</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.confirmBtn, confirming && { opacity: 0.7 }]}
+            onPress={handleConfirm}
+            disabled={confirming}
+          >
+            {confirming
+              ? <ActivityIndicator color="#fff" />
+              : <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={styles.confirmBtnText}>Confirm Booking</Text>
+                </>
+            }
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
+            <Text style={styles.cancelBtnText}>Cancel — Choose Different Slot</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Step 1: Pick slot ───────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Facility Summary */}
+        {/* Facility header */}
         <View style={styles.summaryCard}>
-          <Text style={styles.facilityName}>{facility.name}</Text>
+          <Text style={styles.facilityName}>{facility?.name}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="location-outline" size={14} color="#64748b" />
-            <Text style={styles.metaText}>{typeof facility.location === 'object' ? facility.location?.address : facility.location}</Text>
+            <Text style={styles.metaText}>
+              {typeof facility?.location === 'object' ? facility?.location?.address : facility?.location}
+            </Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Ionicons name="cash-outline" size={14} color="#64748b" />
+            <Text style={styles.metaText}>LKR {facility?.pricePerHour} / slot</Text>
           </View>
         </View>
 
-        {/* Date Selection */}
-        <Text style={styles.sectionTitle}>Select a Date</Text>
-        <View style={styles.dateSelector}>
-          <TouchableOpacity onPress={() => handleDateChange(-1)} style={styles.dateArrow}>
-            <Ionicons name="chevron-back" size={24} color="#1d4ed8" />
-          </TouchableOpacity>
-          <Text style={styles.dateText}>{selectedDate}</Text>
-          <TouchableOpacity onPress={() => handleDateChange(1)} style={styles.dateArrow}>
-            <Ionicons name="chevron-forward" size={24} color="#1d4ed8" />
-          </TouchableOpacity>
+        {/* Date picker */}
+        <Text style={styles.sectionTitle}>Select Date</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.datePicker}>
+          {DAYS.map(d => (
+            <TouchableOpacity
+              key={d.value}
+              style={[styles.dayChip, selectedDate === d.value && styles.dayChipActive]}
+              onPress={() => { setSelectedDate(d.value); setSelectedSlot(null); setStep(1); }}
+            >
+              <Text style={[styles.dayChipText, selectedDate === d.value && styles.dayChipTextActive]}>
+                {d.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Slot legend */}
+        <View style={styles.legend}>
+          {[['Available', '#1d4ed8'], ['Held', '#a16207'], ['Booked', '#dc2626']].map(([l, c]) => (
+            <View key={l} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: c }]} />
+              <Text style={styles.legendText}>{l}</Text>
+            </View>
+          ))}
         </View>
 
-        {/* Time Slot Selection */}
-        <Text style={styles.sectionTitle}>Select a Time Slot</Text>
+        {/* Slots */}
+        <Text style={styles.sectionTitle}>Available Time Slots</Text>
         {loadingSlots ? (
-          <ActivityIndicator color="#1d4ed8" style={{ marginVertical: 32 }} />
+          <ActivityIndicator color="#1d4ed8" style={{ marginTop: 24 }} />
         ) : slots.length === 0 ? (
           <View style={styles.noSlots}>
             <Ionicons name="time-outline" size={40} color="#cbd5e1" />
-            <Text style={styles.noSlotsText}>No available slots for this date</Text>
+            <Text style={styles.noSlotsText}>No slots available for this date</Text>
           </View>
         ) : (
           <View style={styles.slotsGrid}>
             {slots.map((slot, i) => {
-              const isSelected = selectedSlot?.start === slot.start;
+              const cfg = SLOT_CONFIG[slot.state] || SLOT_CONFIG.Available;
               const isAvailable = slot.state === 'Available';
-              const isBooked = slot.state === 'Booked';
-              const isBlocked = slot.state === 'Blocked';
-              const isPending = slot.state === 'Pending';
-              
-              let btnStyle = styles.slotBtnAvailable;
-              let txtStyle = styles.slotTextAvailable;
-              let iconName = 'time-outline';
-              let stateLabel = '';
-
-              let pendingSecsLeft = null;
-              if (isPending && slotLockInfo[slot.start]) {
-                void tick;
-                pendingSecsLeft = Math.max(0, Math.round((new Date(slotLockInfo[slot.start]) - Date.now()) / 1000));
-              }
-
-              if (isBooked) {
-                btnStyle = styles.slotBtnBooked;
-                txtStyle = styles.slotTextBooked;
-                iconName = 'close-circle';
-                stateLabel = 'Booked';
-              } else if (isBlocked) {
-                btnStyle = styles.slotBtnBlocked;
-                txtStyle = styles.slotTextBlocked;
-                iconName = 'ban';
-                stateLabel = 'Blocked';
-              } else if (isPending) {
-                btnStyle = styles.slotBtnPending;
-                txtStyle = styles.slotTextPending;
-                iconName = 'hourglass-outline';
-                stateLabel = pendingSecsLeft !== null
-                  ? `Held · ${Math.floor(pendingSecsLeft / 60)}:${String(pendingSecsLeft % 60).padStart(2, '0')}`
-                  : 'Held';
-              }
+              const lockExpiry = slotLockInfo[slot.start];
 
               return (
                 <TouchableOpacity
                   key={i}
-                  style={[styles.slotBtn, btnStyle, isSelected && styles.slotBtnSelected]}
-                  onPress={() => setSelectedSlot(slot)}
+                  style={[
+                    styles.slotBtn,
+                    { backgroundColor: cfg.bg, borderColor: cfg.border },
+                    !isAvailable && styles.slotBtnDisabled,
+                  ]}
+                  onPress={() => isAvailable && handleSelectSlot(slot)}
                   disabled={!isAvailable}
+                  activeOpacity={isAvailable ? 0.7 : 1}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Ionicons
-                      name="time-outline"
-                      size={14}
-                      color={isSelected ? '#ffffff' : txtStyle.color}
-                    />
-                    <Text style={[styles.slotText, txtStyle, isSelected && styles.slotTextSelected]}>
-                      {slot.start} – {slot.end}
-                    </Text>
-                  </View>
-                  {!isAvailable && (
-                    <View style={styles.slotStateRow}>
-                      <Ionicons name={iconName} size={12} color={txtStyle.color} />
-                      <Text style={[styles.slotStateText, txtStyle]}>{stateLabel}</Text>
+                  <Text style={[styles.slotTime, { color: cfg.text }]}>
+                    {slot.start}
+                  </Text>
+                  <Text style={[styles.slotEnd, { color: cfg.text + '99' }]}>
+                    – {slot.end}
+                  </Text>
+                  {cfg.label ? (
+                    <View style={[styles.slotStateBadge, { backgroundColor: cfg.border }]}>
+                      <Text style={[styles.slotStateText, { color: cfg.text }]}>{cfg.label}</Text>
                     </View>
+                  ) : null}
+                  {slot.state === 'Pending' && lockExpiry && (
+                    <CountdownBadge expiresAt={lockExpiry} />
                   )}
                 </TouchableOpacity>
               );
             })}
-          </View>
-        )}
-
-        {selectedSlot && !lockedByMe && (
-           <View style={{ marginTop: 24, marginBottom: 24 }}>
-             <TouchableOpacity style={styles.holdBtn} onPress={handleHoldSlot}>
-               <Text style={styles.holdBtnText}>Hold Slot & Proceed to Payment</Text>
-             </TouchableOpacity>
-           </View>
-        )}
-
-        {/* Payment Method Selection */}
-        {lockedByMe && (
-          <View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>Payment Method</Text>
-              {timeLeft !== null && (
-                 <Text style={[styles.timerText, timeLeft <= 30 && { color: '#ef4444' }]}>
-                   ⏳ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                 </Text>
-              )}
-            </View>
-        <View style={styles.paymentMethodContainer}>
-          <TouchableOpacity
-            style={[styles.methodBtn, paymentMethod === 'card' && styles.methodBtnActive]}
-            onPress={() => setPaymentMethod('card')}
-          >
-            <Ionicons name="card-outline" size={24} color={paymentMethod === 'card' ? '#1d4ed8' : '#64748b'} />
-            <Text style={[styles.methodText, paymentMethod === 'card' && styles.methodTextActive]}>Card</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.methodBtn, paymentMethod === 'onsite' && styles.methodBtnActive]}
-            onPress={() => setPaymentMethod('onsite')}
-          >
-            <Ionicons name="cash-outline" size={24} color={paymentMethod === 'onsite' ? '#1d4ed8' : '#64748b'} />
-            <Text style={[styles.methodText, paymentMethod === 'onsite' && styles.methodTextActive]}>On-Site</Text>
-          </TouchableOpacity>
-        </View>
-
-        {paymentMethod === 'card' && (
-          <View style={styles.cardInputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Card Number"
-              keyboardType="numeric"
-              maxLength={16}
-              value={cardDetails.number}
-              onChangeText={(text) => setCardDetails({ ...cardDetails, number: text })}
-            />
-            <View style={styles.cardRow}>
-              <TextInput
-                style={[styles.input, { flex: 1, marginRight: 8 }]}
-                placeholder="MM/YY"
-                keyboardType="numeric"
-                maxLength={5}
-                value={cardDetails.expiry}
-                onChangeText={(text) => setCardDetails({ ...cardDetails, expiry: text })}
-              />
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="CVV"
-                keyboardType="numeric"
-                maxLength={3}
-                value={cardDetails.cvv}
-                onChangeText={(text) => setCardDetails({ ...cardDetails, cvv: text })}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Price Summary */}
-        <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>Amount Due {paymentMethod === 'onsite' ? '(on arrival)' : '(now)'}</Text>
-          <Text style={styles.priceAmount}>LKR {facility.pricePerHour}</Text>
-          <View style={styles.paymentBadge}>
-            <Ionicons name={paymentMethod === 'card' ? "card-outline" : "cash-outline"} size={14} color="#7c3aed" />
-            <Text style={styles.paymentText}>{paymentMethod === 'card' ? 'Pay Now' : 'Pay On-Site'}</Text>
-          </View>
-        </View>
-
-        {/* Confirm Button */}
-        <TouchableOpacity
-          style={[
-            styles.confirmBtn,
-            (!selectedSlot || loading) && styles.confirmBtnDisabled,
-          ]}
-          onPress={handleConfirmBooking}
-          disabled={!selectedSlot || loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-              <Text style={styles.confirmBtnText}>Confirm Booking {paymentMethod === 'card' ? `& Pay LKR ${facility.pricePerHour}` : ''}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.disclaimer}>
-          {paymentMethod === 'card' ? '* Your card will be charged securely via our mock gateway.' : '* Payment will be collected on-site before your session begins.'}
-        </Text>
           </View>
         )}
       </ScrollView>
@@ -470,249 +463,110 @@ export default function BookingFlowScreen({ route, navigation }) {
   );
 }
 
+// ── Detail Row helper ─────────────────────────────────────────────────────────
+function DetailRow({ icon, label, value, highlight }) {
+  return (
+    <View style={styles.detailRow}>
+      <Ionicons name={icon} size={14} color="#64748b" />
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={[styles.detailValue, highlight && styles.detailHighlight]}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f8fafc' },
-  content: { padding: 20 },
-  dateSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  dateArrow: { padding: 4 },
-  dateText: { fontSize: 16, fontWeight: '700', color: '#1d4ed8' },
+  content: { padding: 20, paddingBottom: 40 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+
   summaryCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: '#1d4ed8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20,
+    borderLeftWidth: 4, borderLeftColor: '#1d4ed8',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  facilityName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 8,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
+  facilityName: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginBottom: 10 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   metaText: { fontSize: 13, color: '#64748b' },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 12,
+
+  datePicker: { marginBottom: 16 },
+  dayChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8,
   },
-  noSlots: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 8,
-  },
+  dayChipActive: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
+  dayChipText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  dayChipTextActive: { color: '#fff' },
+
+  legend: { flexDirection: 'row', gap: 16, marginBottom: 12 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 11, color: '#64748b' },
+
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 10 },
+
+  noSlots: { alignItems: 'center', paddingVertical: 32, gap: 8 },
   noSlotsText: { fontSize: 13, color: '#94a3b8' },
-  slotsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 24,
-    justifyContent: 'space-between',
-  },
+
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
   slotBtn: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '48%',
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    width: '47%', borderWidth: 1.5, borderRadius: 12,
+    padding: 12, alignItems: 'center', gap: 2,
   },
-  slotBtnAvailable: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
-  slotBtnBooked: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
-  slotBtnBlocked: { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
-  slotBtnPending: { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
-  slotBtnSelected: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
+  slotBtnDisabled: { opacity: 0.7 },
+  slotTime: { fontSize: 15, fontWeight: '800' },
+  slotEnd: { fontSize: 11 },
+  slotStateBadge: { marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  slotStateText: { fontSize: 9, fontWeight: '700' },
+  countdownText: { fontSize: 10, color: '#a16207', fontWeight: '700', marginTop: 2 },
 
-  slotText: { fontSize: 13, fontWeight: '700' },
-  slotTextAvailable: { color: '#1d4ed8' },
-  slotTextBooked: { color: '#64748b' },
-  slotTextBlocked: { color: '#ef4444' },
-  slotTextPending: { color: '#d97706' },
-  slotTextSelected: { color: '#ffffff' },
+  timerBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fef9c3', borderRadius: 12, padding: 12, marginBottom: 16,
+    borderWidth: 1, borderColor: '#fde047',
+  },
+  timerText: { fontSize: 13, color: '#a16207' },
+  timerBold: { fontWeight: '800' },
 
-  slotStateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
-  slotStateText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-
-  paymentMethodContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  methodBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-  },
-  methodBtnActive: {
-    borderColor: '#1d4ed8',
-    backgroundColor: '#eff6ff',
-  },
-  methodText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  methodTextActive: {
-    color: '#1d4ed8',
-  },
-  cardInputContainer: {
-    marginBottom: 20,
-  },
-  input: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 14,
-    marginBottom: 12,
-    color: '#1e293b',
-  },
-  cardRow: {
-    flexDirection: 'row',
-  },
   priceCard: {
-    backgroundColor: '#eff6ff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-    alignItems: 'center',
+    backgroundColor: '#eff6ff', borderRadius: 14, padding: 16, marginBottom: 20, alignItems: 'center',
   },
-  priceLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 4,
-  },
-  priceAmount: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1d4ed8',
-    marginBottom: 8,
-  },
+  priceLabel: { fontSize: 12, color: '#64748b', marginBottom: 4 },
+  priceAmount: { fontSize: 28, fontWeight: '800', color: '#1d4ed8', marginBottom: 8 },
   paymentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ede9fe',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#ede9fe', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
   },
-  paymentText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#7c3aed',
-  },
-  holdBtn: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: '#f59e0b',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  holdBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  timerText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#d97706',
-  },
+  paymentText: { fontSize: 12, fontWeight: '600', color: '#7c3aed' },
+
   confirmBtn: {
-    backgroundColor: '#1d4ed8',
-    borderRadius: 14,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#1d4ed8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
+    backgroundColor: '#1d4ed8', borderRadius: 14, paddingVertical: 16,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
+    shadowColor: '#1d4ed8', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6,
+    marginBottom: 12,
   },
-  confirmBtnDisabled: {
-    backgroundColor: '#94a3b8',
-    shadowColor: 'transparent',
-    elevation: 0,
+  confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  cancelBtn: { alignItems: 'center', paddingVertical: 12 },
+  cancelBtnText: { fontSize: 14, color: '#64748b', fontWeight: '600' },
+  homeBtn: { alignItems: 'center', paddingVertical: 12 },
+  homeBtnText: { fontSize: 14, color: '#94a3b8' },
+
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  detailLabel: { fontSize: 13, color: '#64748b', width: 70 },
+  detailValue: { fontSize: 13, fontWeight: '600', color: '#1e293b', flex: 1 },
+  detailHighlight: { color: '#1d4ed8', fontSize: 16, fontWeight: '800' },
+
+  successCard: { alignItems: 'center', paddingVertical: 20 },
+  successIcon: { marginBottom: 16 },
+  successTitle: { fontSize: 24, fontWeight: '800', color: '#1e293b', marginBottom: 6 },
+  successSub: { fontSize: 14, color: '#64748b', marginBottom: 24 },
+  bookingDetails: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  confirmBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  disclaimer: {
-    marginTop: 12,
-    fontSize: 12,
-    color: '#94a3b8',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 15,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  backBtn: {
-    backgroundColor: '#1d4ed8',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  backBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  successNote: { fontSize: 12, color: '#94a3b8', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },
+
+  errorTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginTop: 16, marginBottom: 8 },
+  errorText: { fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  backBtn: { backgroundColor: '#1d4ed8', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
+  backBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

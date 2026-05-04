@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, RefreshControl, Modal,
-  TouchableOpacity, Pressable,
+  TouchableOpacity, Pressable, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import QRCode from 'react-native-qrcode-svg';
 import api from '../../lib/axios';
 import BookingCard from '../../components/BookingCard';
+import BookingQRCard from '../../components/BookingQRCard';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useFocusEffect } from '@react-navigation/native';
 import { TextInput, Alert } from 'react-native';
@@ -16,7 +16,7 @@ export default function MyBookingsScreen() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [qrModal, setQrModal] = useState(null); // booking object for QR
+  const [qrModal, setQrModal] = useState(null);
 
   // Reschedule state
   const [rescheduleModal, setRescheduleModal] = useState(null);
@@ -141,9 +141,7 @@ export default function MyBookingsScreen() {
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1d4ed8" />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1d4ed8" />}
         ListHeaderComponent={
           <Text style={styles.header}>My Bookings ({bookings.length})</Text>
         }
@@ -156,48 +154,27 @@ export default function MyBookingsScreen() {
         }
       />
 
-      {/* QR Code Modal */}
+      {/* QR Card Modal */}
       <Modal
         visible={!!qrModal}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setQrModal(null)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setQrModal(null)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            {/* Handle bar */}
+            <View style={styles.handleBar} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Booking QR Code</Text>
               <TouchableOpacity onPress={() => setQrModal(null)}>
                 <Ionicons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalSubtitle}>
-              {qrModal?.propertyId?.name || 'Facility'}
-            </Text>
-            <Text style={styles.modalDate}>
-              {qrModal?.date ? new Date(qrModal.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
-              {'  '}
-              {qrModal?.timeSlot ? `${qrModal.timeSlot.start} – ${qrModal.timeSlot.end}` : ''}
-            </Text>
-            <View style={styles.qrContainer}>
-              {qrModal?.qrCodeData ? (
-                <QRCode
-                  value={qrModal.qrCodeData}
-                  size={200}
-                  color="#1e293b"
-                  backgroundColor="#ffffff"
-                />
-              ) : (
-                <View style={styles.noQr}>
-                  <Ionicons name="qr-code-outline" size={60} color="#cbd5e1" />
-                  <Text style={styles.noQrText}>QR not available</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.qrHint}>Show this QR to the security officer at the venue</Text>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setQrModal(null)}>
-              <Text style={styles.closeBtnText}>Close</Text>
-            </TouchableOpacity>
+            <BookingQRCard
+              booking={qrModal}
+              onClose={() => setQrModal(null)}
+            />
           </Pressable>
         </Pressable>
       </Modal>
@@ -289,98 +266,26 @@ export default function MyBookingsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f8fafc' },
   listContent: { paddingHorizontal: 16, paddingBottom: 24 },
-  header: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginTop: 16,
-    marginBottom: 12,
-  },
+  header: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginTop: 16, marginBottom: 12 },
   qrBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    alignSelf: 'flex-start',
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 10, alignSelf: 'flex-start',
+    backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  qrBtnText: {
-    fontSize: 12,
-    color: '#1d4ed8',
-    fontWeight: '700',
-  },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    gap: 10,
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#64748b',
-  },
+  qrBtnText: { fontSize: 12, color: '#1d4ed8', fontWeight: '700' },
+  empty: { alignItems: 'center', paddingVertical: 60, gap: 10 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#64748b' },
   emptyText: { fontSize: 13, color: '#94a3b8' },
-  // Modal
+
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
   },
-  modalCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxWidth: 360,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  modalSubtitle: {
-    fontSize: 15,
-    color: '#1d4ed8',
-    fontWeight: '600',
-    marginBottom: 4,
-    width: '100%',
-  },
-  modalDate: {
-    fontSize: 13,
-    color: '#64748b',
-    marginBottom: 20,
-    width: '100%',
-  },
-  qrContainer: {
-    padding: 16,
+  modalSheet: {
     backgroundColor: '#f8fafc',
-    borderRadius: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  noQr: {
-    alignItems: 'center',
-    padding: 20,
-    gap: 8,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingBottom: 32,
+    maxHeight: '92%',
   },
   noQrText: { fontSize: 13, color: '#94a3b8' },
   qrHint: { fontSize: 13, color: '#64748b', marginTop: 16, textAlign: 'center' },
@@ -462,4 +367,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
 });

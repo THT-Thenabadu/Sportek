@@ -81,6 +81,11 @@ export default function OwnerStack() {
         component={AssetManagementScreen}
         options={{ title: 'Asset Management', drawerIcon: ({ color }) => <Ionicons name="construct-outline" size={22} color={color} /> }}
       />
+      <Drawer.Screen
+        name="SecurityCredentials"
+        component={SecurityCredentialsScreen}
+        options={{ title: 'Security', drawerIcon: ({ color }) => <Ionicons name="shield-checkmark-outline" size={22} color={color} /> }}
+      />
       {/* Unlisted Screens */}
       <Drawer.Screen
         name="EditProperty"
