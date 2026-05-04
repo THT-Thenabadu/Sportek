@@ -41,6 +41,7 @@ function Sidebar() {
     // Property owners
     if (role === 'propertyOwner') {
       return [
+        { name: 'Analytics',     path: '/dashboard/analytics',  icon: LayoutDashboard },
         { name: 'My Properties', path: '/dashboard/properties', icon: Home     },
         { name: 'Assets',        path: '/dashboard/assets',     icon: Settings },
         { name: 'Warnings',      path: '/dashboard/warnings',   icon: AlertCircle, badge: unreadWarnings },

@@ -38,7 +38,7 @@ const getApplications = async (req, res) => {
 const getMyApplication = async (req, res) => {
   try {
     const app = await Application.findOne({ applicantId: req.user._id });
-    if (!app) return res.status(404).json({ message: 'No application found' });
+    if (!app) return res.json(null);
     res.json(app);
   } catch (error) {
     res.status(500).json({ message: error.message });

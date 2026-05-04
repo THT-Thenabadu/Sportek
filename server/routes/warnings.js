@@ -7,7 +7,7 @@ const Warning = require('../models/Warning');
 router.get('/my-warnings', protect, authorize('propertyOwner'), async (req, res) => {
   try {
     const warnings = await Warning.find({ ownerId: req.user._id })
-      .populate('complaintId', '_id status description')
+      .populate('complaintId', '_id status description subject')
       .sort('-createdAt');
     res.json(warnings);
   } catch (err) {

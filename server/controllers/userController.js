@@ -13,7 +13,7 @@ const generateToken = (id) => {
 // @access  Public
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, phone, institution } = req.body;
+    const { name, email, password, phone } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please add all fields' });
@@ -58,7 +58,8 @@ const registerUser = async (req, res) => {
 // @access  Public
 const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    if (email) email = email.toLowerCase();
 
     const user = await User.findOne({ email });
 
@@ -112,7 +113,7 @@ const banUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    
+
     user.isBanned = req.body.isBanned;
     await user.save();
     res.json({ message: `User ${user.isBanned ? 'banned' : 'unbanned'} successfully` });
@@ -180,7 +181,7 @@ const updateSecurityOfficer = async (req, res) => {
     if (password) {
       // Get the full property owner user with passwordHash to compare
       const propertyOwner = await User.findById(req.user._id);
-      
+
       if (!propertyOwner || !propertyOwner.passwordHash) {
         return res.status(500).json({ message: 'Unable to verify password' });
       }
@@ -188,8 +189,8 @@ const updateSecurityOfficer = async (req, res) => {
       // Check if new password is same as property owner's password
       const isSameAsOwnerPassword = await bcrypt.compare(password, propertyOwner.passwordHash);
       if (isSameAsOwnerPassword) {
-        return res.status(400).json({ 
-          message: 'Security officer password must be different from your property owner password' 
+        return res.status(400).json({
+          message: 'Security officer password must be different from your property owner password'
         });
       }
 
