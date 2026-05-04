@@ -9,6 +9,18 @@ import * as ImagePicker from 'expo-image-picker';
 import api from '../../lib/axios';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
+const NativeInput = ({ type, value, onChangeText, placeholder, style }) => {
+  if (Platform.OS === 'web') {
+    return React.createElement('input', {
+      type, value, placeholder,
+      onChange: (e) => onChangeText(e.target.value),
+      style: { ...StyleSheet.flatten(style), outline: 'none', backgroundColor: 'transparent', border: 'none', width: '100%', height: '100%' },
+      className: 'rn-input-web'
+    });
+  }
+  return <TextInput style={{flex:1}} value={value} onChangeText={onChangeText} placeholder={placeholder} />;
+};
+
 export default function AdminEventsScreen() {
   const [currentView, setCurrentView] = useState('dashboard'); // dashboard, events, venues, bookings
   const [loading, setLoading] = useState(true);
@@ -20,16 +32,14 @@ export default function AdminEventsScreen() {
   const [savingEvent, setSavingEvent] = useState(false);
   const [editingEventId, setEditingEventId] = useState(null);
   const initialEventForm = {
-    name: '', description: '', date: '', time: '', location: '',
-    ticketTiers: [
-      { tier: 'Gold', price: '', totalQuantity: '' },
-      { tier: 'Silver', price: '', totalQuantity: '' },
-      { tier: 'Bronze', price: '', totalQuantity: '' }
-    ]
+    name: '', description: '', eventType: 'music', date: '', time: '', 
+    venueType: 'indoor', venueId: '', location: '', organizerName: '', bookingDeadline: '',
+    ticketCategories: []
   };
   const [eventForm, setEventForm] = useState(initialEventForm);
   const [imageUri, setImageUri] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [eventFormError, setEventFormError] = useState('');
 
   // --- Venues State ---
   const [venues, setVenues] = useState([]);
@@ -289,39 +299,78 @@ export default function AdminEventsScreen() {
     setEditingEventId(null);
     setEventForm(initialEventForm);
     setImageUri(null);
+    setEventFormError('');
     setShowEventModal(true);
   };
 
-  const openEditEvent = (evt) => {
-    setEditingEventId(evt._id);
+  const openEditEvent = async (evt) => {
+    let fullEvt = evt;
+    try {
+      const res = await api.get(`/events/${evt._id}`);
+      fullEvt = res.data;
+    } catch (err) {
+      console.log('Failed to fetch full event, using cache', err);
+    }
+    setEditingEventId(fullEvt._id);
+    const dateStr = fullEvt.date ? new Date(fullEvt.date).toISOString().split('T')[0] : '';
+    const deadlineStr = fullEvt.bookingDeadline ? new Date(fullEvt.bookingDeadline).toISOString().split('T')[0] : '';
+    
     setEventForm({
-      name: evt.name, description: evt.description, date: evt.date, time: evt.time, location: evt.location,
-      ticketTiers: evt.ticketTiers || initialEventForm.ticketTiers
+      name: fullEvt.name, description: fullEvt.description || '', eventType: fullEvt.eventType || 'music',
+      date: dateStr, time: fullEvt.time, venueType: fullEvt.venueType || 'indoor', 
+      venueId: fullEvt.venueId?._id || fullEvt.venueId || '', location: fullEvt.location || '',
+      organizerName: fullEvt.organizerName || '', bookingDeadline: deadlineStr,
+      ticketCategories: fullEvt.ticketCategories?.length ? fullEvt.ticketCategories : (fullEvt.ticketTiers || [])
     });
-    setImageUri(evt.bannerImage || null);
+    setImageUri(fullEvt.bannerImage || null);
+    setEventFormError('');
     setShowEventModal(true);
   };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.8,
+      mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.8, base64: Platform.OS === 'web'
     });
-    if (!result.canceled) setImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      if (Platform.OS === 'web' && result.assets[0].base64) {
+        setImageUri(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      } else {
+        setImageUri(result.assets[0].uri);
+      }
+    }
   };
 
   const handleSaveEvent = async () => {
-    if (!eventForm.name || !eventForm.date || !eventForm.location) {
-      Alert.alert('Error', 'Name, Date, and Location are required.');
+    setEventFormError('');
+    if (!eventForm.name || !eventForm.date || !eventForm.time) {
+      setEventFormError('Please fill in Event Name, Date, and Time.');
       return;
     }
+    if (eventForm.venueType === 'indoor' && !eventForm.venueId) {
+      setEventFormError('Please select a Venue Auditorium.');
+      return;
+    }
+    if (eventForm.venueType === 'outdoor' && !eventForm.location) {
+      setEventFormError('Please specify the Outdoor Location.');
+      return;
+    }
+    if (!eventForm.bookingDeadline) {
+      setEventFormError('Please specify a Booking Deadline.');
+      return;
+    }
+
     setSavingEvent(true);
-    let bannerImage = editingEventId ? imageUri : '';
+    let bannerImage = editingEventId ? (imageUri || '') : '';
 
     if (imageUri && !imageUri.startsWith('http')) {
       setUploadingImage(true);
       try {
         const formData = new FormData();
-        formData.append('file', { uri: imageUri, type: 'image/jpeg', name: 'upload.jpg' });
+        if (Platform.OS === 'web') {
+          formData.append('file', imageUri);
+        } else {
+          formData.append('file', { uri: imageUri, type: 'image/jpeg', name: 'event_banner.jpg' });
+        }
         formData.append('upload_preset', 'SportekEvent');
         const imgRes = await fetch('https://api.cloudinary.com/v1_1/dcqcebwg8/image/upload', {
           method: 'POST', body: formData,
@@ -329,16 +378,35 @@ export default function AdminEventsScreen() {
         const imgData = await imgRes.json();
         if (imgData.secure_url) bannerImage = imgData.secure_url;
       } catch (err) {
-        Alert.alert('Upload Error', 'Failed to upload image.');
+        Alert.alert('Upload Error', 'Failed to upload event banner.');
         setUploadingImage(false);
         setSavingEvent(false);
         return;
       }
       setUploadingImage(false);
+    } else if (imageUri && imageUri.startsWith('http')) {
+      bannerImage = imageUri;
     }
 
     try {
-      const payload = { ...eventForm, bannerImage };
+      const payload = {
+        name: eventForm.name,
+        description: eventForm.description,
+        eventType: eventForm.eventType,
+        date: eventForm.date,
+        time: eventForm.time,
+        venueType: eventForm.venueType,
+        venueId: eventForm.venueType === 'indoor' ? eventForm.venueId : null,
+        location: eventForm.venueType === 'outdoor' ? eventForm.location : '',
+        organizerName: eventForm.organizerName,
+        bookingDeadline: eventForm.bookingDeadline,
+        ticketCategories: eventForm.ticketCategories.map(c => ({
+          name: c.name || c.tier, price: Number(c.price), totalQuantity: Number(c.totalQuantity)
+        })),
+        bannerImage,
+        status: 'live' // auto publish
+      };
+
       if (editingEventId) {
         await api.put(`/events/${editingEventId}`, payload);
       } else {
@@ -353,10 +421,19 @@ export default function AdminEventsScreen() {
     }
   };
 
-  const updateTier = (index, field, val) => {
-    const newTiers = [...eventForm.ticketTiers];
-    newTiers[index][field] = val;
-    setEventForm({ ...eventForm, ticketTiers: newTiers });
+  const addCategory = () => {
+    if (eventForm.ticketCategories.length >= 5) return;
+    setEventForm({ ...eventForm, ticketCategories: [...eventForm.ticketCategories, { name: '', price: '', totalQuantity: '' }] });
+  };
+  const removeCategory = (index) => {
+    const cats = [...eventForm.ticketCategories];
+    cats.splice(index, 1);
+    setEventForm({ ...eventForm, ticketCategories: cats });
+  };
+  const updateCategory = (index, field, val) => {
+    const cats = [...eventForm.ticketCategories];
+    cats[index][field] = val;
+    setEventForm({ ...eventForm, ticketCategories: cats });
   };
 
   // --- Renderers ---
@@ -822,72 +899,189 @@ export default function AdminEventsScreen() {
       {/* Event Modal */}
       <Modal visible={showEventModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { height: '95%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingEventId ? 'Edit Event' : 'Create Event'}</Text>
-              <TouchableOpacity onPress={() => setShowEventModal(false)}>
-                <Ionicons name="close" size={24} color="#64748b" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => setShowEventModal(false)}>
+                  <Ionicons name="arrow-back" size={24} color="#64748b" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>{editingEventId ? 'Edit Event' : 'Create New Event'}</Text>
+              </View>
+              <View style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>DRAFT MODE</Text>
+              </View>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Event Name *</Text>
-                <TextInput style={styles.input} value={eventForm.name} onChangeText={v => setEventForm({ ...eventForm, name: v })} placeholder="e.g. Summer Tournament" />
-              </View>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Description</Text>
-                <TextInput style={[styles.input, styles.textArea]} value={eventForm.description} onChangeText={v => setEventForm({ ...eventForm, description: v })} multiline placeholder="Event details..." />
-              </View>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={[styles.formGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Date (YYYY-MM-DD) *</Text>
-                  <TextInput style={styles.input} value={eventForm.date} onChangeText={v => setEventForm({ ...eventForm, date: v })} placeholder="2025-08-15" />
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
+              
+              {/* SECTION 1 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>1. BASIC EVENT INFO</Text>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Event Name</Text>
+                  <TextInput style={styles.input} value={eventForm.name} onChangeText={v => setEventForm({ ...eventForm, name: v })} placeholder="e.g. Midnight Blues Concert" />
                 </View>
-                <View style={[styles.formGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Time</Text>
-                  <TextInput style={styles.input} value={eventForm.time} onChangeText={v => setEventForm({ ...eventForm, time: v })} placeholder="18:00" />
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Event Description</Text>
+                  <TextInput style={[styles.input, styles.textArea]} value={eventForm.description} onChangeText={v => setEventForm({ ...eventForm, description: v })} multiline placeholder="Experience an unforgettable night..." />
                 </View>
-              </View>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Location / Venue *</Text>
-                {venues.length > 0 ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                    {venues.map(v => (
-                      <TouchableOpacity key={v._id} style={[styles.venueChip, eventForm.location === v.name && styles.venueChipActive]} onPress={() => setEventForm({ ...eventForm, location: v.name })}>
-                        <Text style={[styles.venueChipText, eventForm.location === v.name && styles.venueChipTextActive]}>{v.name}</Text>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Event Type</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    {['music', 'drama', 'sport', 'other'].map(type => (
+                      <TouchableOpacity key={type} style={[styles.envBtn, eventForm.eventType === type && styles.envBtnActive, { flex: 0, paddingHorizontal: 16 }]} onPress={() => setEventForm({ ...eventForm, eventType: type })}>
+                        <Text style={[styles.envBtnText, eventForm.eventType === type && styles.envBtnTextActive, { textTransform: 'capitalize' }]}>{type}</Text>
                       </TouchableOpacity>
                     ))}
-                  </ScrollView>
-                ) : null}
-                <TextInput style={styles.input} value={eventForm.location} onChangeText={v => setEventForm({ ...eventForm, location: v })} placeholder="Or type location manually..." />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Banner Image</Text>
-                <TouchableOpacity style={styles.imgPicker} onPress={pickImage}>
-                  {imageUri ? <Image source={{ uri: imageUri }} style={styles.imgPreview} /> : <Ionicons name="camera-outline" size={32} color="#94a3b8" />}
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.label, { marginTop: 8 }]}>Ticket Tiers</Text>
-              {eventForm.ticketTiers.map((t, i) => (
-                <View key={t.tier} style={styles.tierRow}>
-                  <View style={styles.tierCol}>
-                    <Text style={styles.tierLabel}>{t.tier} Price</Text>
-                    <TextInput style={styles.input} keyboardType="numeric" value={t.price ? t.price.toString() : ''} onChangeText={v => updateTier(i, 'price', v)} placeholder="0" />
-                  </View>
-                  <View style={styles.tierCol}>
-                    <Text style={styles.tierLabel}>{t.tier} Qty</Text>
-                    <TextInput style={styles.input} keyboardType="numeric" value={t.totalQuantity ? t.totalQuantity.toString() : ''} onChangeText={v => updateTier(i, 'totalQuantity', v)} placeholder="0" />
                   </View>
                 </View>
-              ))}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Background Image</Text>
+                  <TouchableOpacity style={[styles.imgPicker, { height: 120 }]} onPress={pickImage}>
+                    {imageUri ? <Image source={{ uri: imageUri }} style={styles.imgPreview} /> : (
+                      <View style={{ alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="image-outline" size={32} color="#94a3b8" />
+                        <Text style={{ fontSize: 13, color: '#64748b' }}>Upload a file</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-              <TouchableOpacity style={[styles.saveBtn, (savingEvent || uploadingImage) && { opacity: 0.7 }]} onPress={handleSaveEvent} disabled={savingEvent || uploadingImage}>
-                {savingEvent || uploadingImage ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Event</Text>}
-              </TouchableOpacity>
-              <View style={{ height: 40 }} />
+              {/* SECTION 2 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>2. DATE & TIME</Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Event Date</Text>
+                    <View style={styles.input}>
+                      <NativeInput type="date" value={eventForm.date} onChangeText={v => setEventForm({ ...eventForm, date: v })} placeholder="YYYY-MM-DD" />
+                    </View>
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Event Time</Text>
+                    <View style={styles.input}>
+                      <NativeInput type="time" value={eventForm.time} onChangeText={v => setEventForm({ ...eventForm, time: v })} placeholder="--:--" />
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* SECTION 3 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>3. VENUE DETAILS</Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Venue Type</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity style={[styles.envBtn, eventForm.venueType === 'indoor' && styles.envBtnActive, { paddingVertical: 10 }]} onPress={() => setEventForm({ ...eventForm, venueType: 'indoor', venueId: '' })}>
+                        <Text style={[styles.envBtnText, eventForm.venueType === 'indoor' && styles.envBtnTextActive]}>Indoor</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.envBtn, eventForm.venueType === 'outdoor' && styles.envBtnActive, { paddingVertical: 10 }]} onPress={() => setEventForm({ ...eventForm, venueType: 'outdoor', venueId: null })}>
+                        <Text style={[styles.envBtnText, eventForm.venueType === 'outdoor' && styles.envBtnTextActive]}>Outdoor</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>{eventForm.venueType === 'indoor' ? 'Select Auditorium' : 'Location Name'}</Text>
+                    {eventForm.venueType === 'indoor' ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingBottom: 8 }}>
+                        {venues.filter(v => v.venueType !== 'outdoor' && v.locationType !== 'outdoor').map(v => (
+                          <TouchableOpacity key={v._id} style={[styles.venueChip, eventForm.venueId === v._id && styles.venueChipActive]} onPress={() => setEventForm({ ...eventForm, venueId: v._id })}>
+                            <Text style={[styles.venueChipText, eventForm.venueId === v._id && styles.venueChipTextActive]}>{v.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    ) : (
+                      <TextInput style={styles.input} value={eventForm.location} onChangeText={v => setEventForm({ ...eventForm, location: v })} placeholder="Outdoor location..." />
+                    )}
+                  </View>
+                </View>
+                {/* Dynamic Image Preview */}
+                {eventForm.venueType === 'indoor' && eventForm.venueId ? (
+                  (() => {
+                    const selectedVenueObj = venues.find(v => v._id === eventForm.venueId);
+                    if (selectedVenueObj && selectedVenueObj.seatLayoutImage) {
+                      return (
+                        <View style={{ marginTop: 8 }}>
+                          <Text style={{ fontSize: 12, color: '#16a34a', fontWeight: '600', marginBottom: 6 }}>✓ Venue Map Loaded</Text>
+                          <Image source={{ uri: selectedVenueObj.seatLayoutImage }} style={{ width: '100%', height: 160, resizeMode: 'contain', backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }} />
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()
+                ) : null}
+              </View>
+
+              {/* SECTION 4 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>4. OPERATIONS & DEADLINES</Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Organizer Name</Text>
+                    <TextInput style={styles.input} value={eventForm.organizerName} onChangeText={v => setEventForm({ ...eventForm, organizerName: v })} placeholder="e.g. BlueStar Events" />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Booking Deadline Date</Text>
+                    <View style={styles.input}>
+                      <NativeInput type="date" value={eventForm.bookingDeadline} onChangeText={v => setEventForm({ ...eventForm, bookingDeadline: v })} placeholder="YYYY-MM-DD" />
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* SECTION 5 */}
+              <View style={styles.sectionContainer}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <Text style={styles.sectionTitle}>5. TICKET CATEGORIES (PRICING)</Text>
+                  <TouchableOpacity style={{ backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }} onPress={addCategory}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>+ Add Category ({eventForm.ticketCategories.length}/5)</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {eventForm.ticketCategories.length === 0 ? (
+                  <View style={{ padding: 24, alignItems: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: '#cbd5e1', borderRadius: 12 }}>
+                    <Ionicons name="pricetag-outline" size={24} color="#94a3b8" />
+                    <Text style={{ color: '#64748b', fontSize: 13, marginTop: 8 }}>No ticket categories added.</Text>
+                  </View>
+                ) : (
+                  eventForm.ticketCategories.map((c, i) => (
+                    <View key={i} style={styles.tierRow}>
+                      <View style={styles.tierCol}>
+                        <Text style={styles.tierLabel}>Name</Text>
+                        <TextInput style={styles.input} value={c.name} onChangeText={v => updateCategory(i, 'name', v)} placeholder="VIP" />
+                      </View>
+                      <View style={styles.tierCol}>
+                        <Text style={styles.tierLabel}>Price (LKR)</Text>
+                        <TextInput style={styles.input} keyboardType="numeric" value={c.price ? String(c.price) : ''} onChangeText={v => updateCategory(i, 'price', v)} placeholder="0" />
+                      </View>
+                      <View style={styles.tierCol}>
+                        <Text style={styles.tierLabel}>Total Qty</Text>
+                        <TextInput style={styles.input} keyboardType="numeric" value={c.totalQuantity ? String(c.totalQuantity) : ''} onChangeText={v => updateCategory(i, 'totalQuantity', v)} placeholder="0" />
+                      </View>
+                      <TouchableOpacity style={{ justifyContent: 'center', paddingLeft: 8, paddingTop: 16 }} onPress={() => removeCategory(i)}>
+                        <Ionicons name="trash" size={20} color="#dc2626" />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              {eventFormError ? (
+                <View style={{ backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+                  <Text style={{ color: '#dc2626', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>{eventFormError}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.wizardFooter}>
+                <TouchableOpacity style={styles.wizardBtnOutline} onPress={() => setShowEventModal(false)}>
+                  <Text style={styles.wizardBtnOutlineText}>DISCARD</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.wizardBtnSolid, { backgroundColor: '#4f46e5' }, (savingEvent || uploadingImage) && { opacity: 0.7 }]} onPress={handleSaveEvent} disabled={savingEvent || uploadingImage}>
+                  {savingEvent || uploadingImage ? <ActivityIndicator color="#fff" /> : <Text style={styles.wizardBtnSolidText}>{editingEventId ? 'UPDATE EVENT' : 'PUBLISH EVENT LIVE'}</Text>}
+                </TouchableOpacity>
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -962,6 +1156,8 @@ const styles = StyleSheet.create({
   modalCard: { backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b' },
+  sectionContainer: { marginBottom: 24 },
+  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#4f46e5', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5, borderBottomWidth: 1, borderBottomColor: '#e0e7ff', paddingBottom: 8 },
   formGroup: { marginBottom: 16 },
   label: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 6 },
   input: { backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1e293b' },
