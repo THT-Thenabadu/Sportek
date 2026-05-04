@@ -3,18 +3,23 @@ import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 export default function EventCard({ event, onPress }) {
-  const { name, date, venue, ticketTiers, image } = event;
+  const { name, date, venueId, location, venue, ticketCategories, ticketTiers, bannerImage, image } = event;
   const dateStr = date
     ? new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
     : 'Date TBA';
-  const minPrice = ticketTiers?.length
-    ? Math.min(...ticketTiers.map((t) => t.price || 0))
+  
+  const sourceCats = ticketCategories?.length ? ticketCategories : ticketTiers;
+  const minPrice = sourceCats?.length
+    ? Math.min(...sourceCats.map((t) => t.price || 0))
     : null;
+    
+  const displayLocation = venueId?.name ? `${venueId.name}${venueId.city ? `, ${venueId.city}` : ''}` : (location || venue?.name);
+  const displayImage = bannerImage || image;
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      {image ? (
-        <Image source={{ uri: image }} style={styles.image} resizeMode="cover" />
+      {displayImage ? (
+        <Image source={{ uri: displayImage }} style={styles.image} resizeMode="cover" />
       ) : (
         <View style={styles.imagePlaceholder}>
           <Ionicons name="ticket" size={40} color="#1d4ed8" />
@@ -26,12 +31,12 @@ export default function EventCard({ event, onPress }) {
           <Ionicons name="calendar-outline" size={13} color="#64748b" />
           <Text style={styles.meta}>{dateStr}</Text>
         </View>
-        {venue?.name && (
+        {displayLocation ? (
           <View style={styles.row}>
             <Ionicons name="location-outline" size={13} color="#64748b" />
-            <Text style={styles.meta} numberOfLines={1}>{venue.name}</Text>
+            <Text style={styles.meta} numberOfLines={1}>{displayLocation}</Text>
           </View>
-        )}
+        ) : null}
         {minPrice != null && (
           <Text style={styles.price}>From LKR {minPrice}</Text>
         )}
