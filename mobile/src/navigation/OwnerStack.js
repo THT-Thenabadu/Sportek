@@ -10,6 +10,7 @@ import AddPropertyScreen from '../screens/owner/AddPropertyScreen';
 import EditPropertyScreen from '../screens/owner/EditPropertyScreen';
 import AssetManagementScreen from '../screens/owner/AssetManagementScreen';
 import OwnerRescheduleRequestsScreen from '../screens/owner/OwnerRescheduleRequestsScreen';
+import SecurityCredentialsScreen from '../screens/owner/SecurityCredentialsScreen';
 import FacilityDetailScreen from '../screens/customer/FacilityDetailScreen';
 import BookingFlowScreen from '../screens/customer/BookingFlowScreen';
 
