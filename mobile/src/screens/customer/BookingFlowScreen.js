@@ -6,9 +6,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../lib/axios';
 import { TextInput } from 'react-native';
+import { useAuth } from '../../store/useAuthStore';
 
 export default function BookingFlowScreen({ route, navigation }) {
   const { facility, slots: initialSlots } = route?.params || {};
+  const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState(Array.isArray(initialSlots) ? initialSlots : []);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -95,6 +97,21 @@ export default function BookingFlowScreen({ route, navigation }) {
       ]
     );
   };
+
+  if (user?.role !== 'customer') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="lock-closed-outline" size={64} color="#94a3b8" />
+          <Text style={styles.errorTitle}>Access Denied</Text>
+          <Text style={styles.errorText}>Booking is only available for customers.</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -434,5 +451,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 15,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  backBtn: {
+    backgroundColor: '#1d4ed8',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  backBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
