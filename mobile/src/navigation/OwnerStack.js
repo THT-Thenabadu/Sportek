@@ -59,7 +59,7 @@ export default function OwnerStack() {
       <Drawer.Screen
         name="OwnerHome"
         component={OwnerHomeScreen}
-        options={{ title: 'Home', drawerIcon: ({ color }) => <Ionicons name="home-outline" size={22} color={color} /> }}
+        options={{ title: 'Dashboard', drawerIcon: ({ color }) => <Ionicons name="grid-outline" size={22} color={color} /> }}
       />
       <Drawer.Screen
         name="MyProperties"

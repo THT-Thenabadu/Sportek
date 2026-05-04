@@ -15,7 +15,7 @@ const SPORT_ICONS = {
 
 const PLACEHOLDER_COLORS = ['#dbeafe', '#e0e7ff', '#d1fae5', '#fef3c7', '#ffe4e6'];
 
-export default function FacilityCard({ facility, onPress }) {
+export default function FacilityCard({ facility, onPress, hideBookButton }) {
   const { name, sportType, location, pricePerHour, images } = facility;
   const locationText = typeof location === 'object' ? location?.address : location;
   const imageUri = images?.[0] || null;
@@ -43,9 +43,16 @@ export default function FacilityCard({ facility, onPress }) {
           <Text style={styles.meta} numberOfLines={1}>{locationText || 'Location N/A'}</Text>
         </View>
         {pricePerHour != null && (
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>LKR {pricePerHour}</Text>
-            <Text style={styles.perHour}>/hr</Text>
+          <View style={styles.bottomRow}>
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>LKR {pricePerHour}</Text>
+              <Text style={styles.perHour}>/hr</Text>
+            </View>
+            {!hideBookButton && (
+              <View style={styles.bookBtn}>
+                <Text style={styles.bookBtnText}>Book</Text>
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -108,5 +115,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     marginLeft: 2,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginTop: 8,
+  },
+  bookBtn: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  bookBtnText: {
+    color: '#1d4ed8',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

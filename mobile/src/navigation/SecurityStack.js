@@ -19,7 +19,7 @@ export default function SecurityStack() {
       <Stack.Screen
         name="ScanQR"
         component={ScanQRScreen}
-        options={{ title: 'Scan QR Code' }}
+        options={{ title: 'Dashboard (Scan QR)' }}
       />
       <Stack.Screen
         name="UpcomingBookings"

@@ -74,7 +74,7 @@ export default function CustomerTabs() {
         },
         tabBarIcon: ({ color, size }) => {
           const icons = {
-            Home: 'home',
+            Dashboard: 'grid',
             Venues: 'business',
             Bookings: 'calendar',
             Events: 'ticket',
@@ -84,7 +84,7 @@ export default function CustomerTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeStack} />
+      <Tab.Screen name="Dashboard" component={HomeStack} />
       <Tab.Screen name="Venues" component={VenuesStack} />
       <Tab.Screen name="Bookings" component={MyBookingsScreen} options={{ headerShown: true, ...HEADER_STYLE, title: 'My Bookings' }} />
       <Tab.Screen name="Events" component={EventsStack} />

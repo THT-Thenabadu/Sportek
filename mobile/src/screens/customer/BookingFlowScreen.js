@@ -5,16 +5,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../lib/axios';
+// <<<<<<< mobile-featureBooking
 import { TextInput } from 'react-native';
+// =======
+// >>>>>>> ReactNative/Mobile
 import { useAuth } from '../../store/useAuthStore';
 
 export default function BookingFlowScreen({ route, navigation }) {
   const { facility, slots: initialSlots } = route?.params || {};
   const { user } = useAuth();
+// <<<<<<< mobile-featureBooking
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState(Array.isArray(initialSlots) ? initialSlots : []);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
+// =======
+//   const slots = Array.isArray(initialSlots) ? initialSlots : [];
+// >>>>>>> ReactNative/Mobile
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('onsite');
