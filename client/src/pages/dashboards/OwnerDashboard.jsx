@@ -979,6 +979,8 @@ export function OwnerWarnings() {
 }
 
 function OwnerRescheduleModal({ request, onClose, onApproved }) {
+  const [selectedPropertyId, setSelectedPropertyId] = useState(request.propertyId._id);
+  const [properties, setProperties] = useState([]);
   const [selectedDate, setSelectedDate] = useState(request.requestedDate ? request.requestedDate.split('T')[0] : new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -987,20 +989,26 @@ function OwnerRescheduleModal({ request, onClose, onApproved }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!request) return;
+    api.get('/properties/my-properties')
+      .then(r => setProperties(r.data || []))
+      .catch(e => console.error(e));
+  }, []);
+
+  useEffect(() => {
+    if (!request || !selectedPropertyId) return;
     setLoadingSlots(true);
     setError('');
-    api.get(`/bookings/slots/${request.propertyId._id}`, { params: { date: selectedDate } })
+    api.get(`/bookings/slots/${selectedPropertyId}`, { params: { date: selectedDate } })
       .then(r => {
         const fetchedSlots = r.data.slots || r.data || [];
-        setSlots(fetchedSlots.filter(s => s.state === 'Available' || (s.start === request.requestedTimeSlot?.start && selectedDate === (request.requestedDate ? request.requestedDate.split('T')[0] : ''))));
+        setSlots(fetchedSlots.filter(s => s.state === 'Available' || (s.start === request.requestedTimeSlot?.start && selectedDate === (request.requestedDate ? request.requestedDate.split('T')[0] : '') && selectedPropertyId === request.propertyId._id)));
         setLoadingSlots(false);
       })
       .catch(err => {
         setError(err.response?.data?.message || 'Failed to load slots');
         setLoadingSlots(false);
       });
-  }, [request, selectedDate]);
+  }, [request, selectedDate, selectedPropertyId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1010,7 +1018,8 @@ function OwnerRescheduleModal({ request, onClose, onApproved }) {
     try {
       await api.patch(`/reschedule/${request._id}/approve`, {
         newDate: selectedDate,
-        newTimeSlot: selectedSlot
+        newTimeSlot: selectedSlot,
+        newPropertyId: selectedPropertyId
       });
       onApproved();
       onClose();
@@ -1037,6 +1046,19 @@ function OwnerRescheduleModal({ request, onClose, onApproved }) {
               "{request.customerMessage}"
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Select Facility/Venue</label>
+            <select
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              value={selectedPropertyId}
+              onChange={e => setSelectedPropertyId(e.target.value)}
+            >
+              {properties.map(p => (
+                <option key={p._id} value={p._id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
@@ -1295,10 +1317,10 @@ export function OwnerFeedback() {
   }, []);
 
   const statusColors = {
-    open: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    under_review: 'bg-blue-100 text-blue-800 border-blue-200',
-    resolved: 'bg-green-100 text-green-800 border-green-200',
-    dismissed: 'bg-slate-100 text-slate-600 border-slate-200',
+    open: 'bg-yellow-100 text-yellow-800',
+    under_review: 'bg-blue-100 text-blue-800',
+    resolved: 'bg-green-100 text-green-800',
+    dismissed: 'bg-slate-100 text-slate-600',
   };
 
   const renderStars = (rating) =>
@@ -1381,7 +1403,7 @@ export function OwnerFeedback() {
         reviews.length === 0 ? (
           <div className="text-center py-16 text-slate-500">
             <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.175 0l-3.976 2.888c-.784.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.519-4.674z" />
             </svg>
             <p className="font-medium">No reviews yet</p>
             <p className="text-sm mt-1">Customer reviews will appear here once submitted.</p>

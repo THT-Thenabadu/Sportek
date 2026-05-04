@@ -69,13 +69,13 @@ const initSocket = (server) => {
         return;
       }
 
-      // Start 120s timer
+      // Start 300s timer
       const timeoutId = setTimeout(() => {
         lockedSlots.delete(slotKey);
         io.to(`property_${propertyId}`).emit('slot_released', { propertyId, date, timeSlotStart });
-      }, 120000);
+      }, 300000);
 
-      const expiresAt = new Date(Date.now() + 120000);
+      const expiresAt = new Date(Date.now() + 300000);
       lockedSlots.set(slotKey, { userId, timeoutId, expiresAt });
       console.log(`[socket lock_slot] stored key="${slotKey}" userId="${userId}"`);
 

@@ -9,6 +9,9 @@ import MyPropertiesScreen from '../screens/owner/MyPropertiesScreen';
 import AddPropertyScreen from '../screens/owner/AddPropertyScreen';
 import EditPropertyScreen from '../screens/owner/EditPropertyScreen';
 import AssetManagementScreen from '../screens/owner/AssetManagementScreen';
+import OwnerRescheduleRequestsScreen from '../screens/owner/OwnerRescheduleRequestsScreen';
+import FacilityDetailScreen from '../screens/customer/FacilityDetailScreen';
+import BookingFlowScreen from '../screens/customer/BookingFlowScreen';
 
 const Drawer = createDrawerNavigator();
 
@@ -64,6 +67,11 @@ export default function OwnerStack() {
         options={{ title: 'My Properties', drawerIcon: ({ color }) => <Ionicons name="business-outline" size={22} color={color} /> }}
       />
       <Drawer.Screen
+          name="RescheduleRequests"
+          component={OwnerRescheduleRequestsScreen}
+          options={{ title: 'Reschedule Requests', drawerIcon: ({ color }) => <Ionicons name="time-outline" size={22} color={color} /> }}
+     />
+      <Drawer.Screen
         name="AddProperty"
         component={AddPropertyScreen}
         options={{ title: 'Add Property', drawerIcon: ({ color }) => <Ionicons name="add-circle-outline" size={22} color={color} /> }}
@@ -78,6 +86,16 @@ export default function OwnerStack() {
         name="EditProperty"
         component={EditPropertyScreen}
         options={{ title: 'Edit Property', drawerItemStyle: { display: 'none' } }}
+      />
+      <Drawer.Screen
+        name="FacilityDetail"
+        component={FacilityDetailScreen}
+        options={{ title: 'Facility Details', drawerItemStyle: { display: 'none' } }}
+      />
+      <Drawer.Screen
+        name="BookingFlow"
+        component={BookingFlowScreen}
+        options={{ title: 'Booking', drawerItemStyle: { display: 'none' } }}
       />
     </Drawer.Navigator>
   );
