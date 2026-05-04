@@ -185,7 +185,7 @@ const createPaymentIntent = async (req, res) => {
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(totalAmount * 100), // convert to cents
-      currency: 'usd',
+      currency: 'lkr',
       metadata: {
         bookingId: booking._id.toString(),
         slotKey,

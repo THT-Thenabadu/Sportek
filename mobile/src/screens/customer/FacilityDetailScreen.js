@@ -28,7 +28,7 @@ export default function FacilityDetailScreen({ route, navigation }) {
   }, [facility._id]);
 
   const imageUri = facility.images?.[0] || null;
-  const availableSlots = Array.isArray(slots) ? slots.filter((s) => s.status === 'available') : [];
+  const availableSlots = Array.isArray(slots) ? slots.filter((s) => s.state === 'Available') : [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>

@@ -15,27 +15,32 @@ const SPORT_FILTERS = ['All', 'Football', 'Basketball', 'Tennis', 'Cricket', 'Sw
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const [facilities, setFacilities] = useState([]);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState(''); // '', 'price_asc', 'price_desc', 'name_asc'
 
-  const fetchFacilities = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await api.get('/properties');
-      setFacilities(res.data);
+      const [propRes, reqRes] = await Promise.all([
+        api.get('/properties'),
+        api.get('/reschedule/owner')
+      ]);
+      setFacilities(propRes.data);
+      setPendingRequestsCount(reqRes.data?.length || 0);
     } catch (e) {
-      console.log('Error fetching facilities:', e.message);
+      console.log('Error fetching data:', e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { fetchFacilities(); }, [fetchFacilities]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const onRefresh = () => { setRefreshing(true); fetchFacilities(); };
+  const onRefresh = () => { setRefreshing(true); fetchData(); };
 
   let filtered = facilities.filter((f) => {
     const matchesSport = selectedFilter === 'All' || f.sportType?.toLowerCase() === selectedFilter.toLowerCase();
@@ -52,7 +57,7 @@ export default function HomeScreen({ navigation }) {
     return 0;
   });
 
-  if (loading) return <LoadingSpinner message="Loading facilities..." />;
+  if (loading) return <LoadingSpinner message="Loading dashboard..." />;
 
   const firstName = user?.name?.split(' ')[0] || 'there';
 
@@ -93,6 +98,28 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.statLabel}>Rating</Text>
           </View>
         </View>
+
+        {/* Action Banners */}
+        <TouchableOpacity 
+          style={styles.actionBanner}
+          onPress={() => navigation.navigate('RescheduleRequests')}
+        >
+          <View style={styles.actionBannerIcon}>
+            <Ionicons name="swap-horizontal" size={24} color="#f59e0b" />
+          </View>
+          <View style={styles.actionBannerContent}>
+            <Text style={styles.actionBannerTitle}>Venue Change Requests</Text>
+            <Text style={styles.actionBannerSubtitle}>
+              {pendingRequestsCount} pending customer {pendingRequestsCount === 1 ? 'request' : 'requests'}
+            </Text>
+          </View>
+          {pendingRequestsCount > 0 && (
+             <View style={styles.badge}>
+               <Text style={styles.badgeText}>{pendingRequestsCount}</Text>
+             </View>
+          )}
+          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+        </TouchableOpacity>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -234,6 +261,56 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  actionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  actionBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#fef3c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  actionBannerContent: {
+    flex: 1,
+  },
+  actionBannerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  actionBannerSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  badge: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 12,
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   filtersSection: { marginTop: 16 },
   filterContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },

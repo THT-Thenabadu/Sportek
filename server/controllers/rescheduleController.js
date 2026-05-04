@@ -89,7 +89,7 @@ const getOwnerRescheduleRequests = async (req, res) => {
 // @access  Private/Owner
 const approveRescheduleRequest = async (req, res) => {
   try {
-    const { newDate, newTimeSlot } = req.body;
+    const { newDate, newTimeSlot, newPropertyId } = req.body;
     const request = await RescheduleRequest.findById(req.params.id).populate('propertyId');
     if (!request) return res.status(404).json({ message: 'Request not found' });
 
@@ -99,18 +99,19 @@ const approveRescheduleRequest = async (req, res) => {
 
     const finalDate = newDate || request.requestedDate;
     const finalTimeSlot = newTimeSlot || request.requestedTimeSlot;
+    const finalPropertyId = newPropertyId || request.propertyId._id;
 
     // Check slot availability
     const existingBooking = await Booking.findOne({
       _id: { $ne: request.bookingId },
-      propertyId: request.propertyId._id,
+      propertyId: finalPropertyId,
       date: finalDate,
       'timeSlot.start': finalTimeSlot.start,
       status: { $in: ['booked', 'completed'] }
     });
 
     if (existingBooking) {
-      return res.status(400).json({ message: 'The selected slot is already booked by another customer.' });
+      return res.status(400).json({ message: 'The selected slot is already booked.' });
     }
 
     // Update booking
@@ -119,11 +120,14 @@ const approveRescheduleRequest = async (req, res) => {
 
     booking.date = finalDate;
     booking.timeSlot = finalTimeSlot;
+    if (newPropertyId) {
+      booking.propertyId = newPropertyId;
+    }
     await booking.save();
 
     // Update request
     request.status = 'approved';
-    request.rescheduledTo = { date: finalDate, timeSlot: finalTimeSlot };
+    request.rescheduledTo = { date: finalDate, timeSlot: finalTimeSlot, propertyId: finalPropertyId };
     await request.save();
 
     res.json({ message: 'Reschedule request approved', request });
