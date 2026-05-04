@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
-  TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Image
+  TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Image, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -39,6 +39,8 @@ export default function AdminEventsScreen() {
   const [venueImageUri, setVenueImageUri] = useState(null);
   const [uploadingVenueImage, setUploadingVenueImage] = useState(false);
   const [editingVenueId, setEditingVenueId] = useState(null);
+  const [showViewVenueModal, setShowViewVenueModal] = useState(false);
+  const [selectedVenue, setSelectedVenue] = useState(null);
 
   const initialVenueForm = {
     name: '', venueType: 'Stadium', totalCapacity: '', description: '',
@@ -115,9 +117,15 @@ export default function AdminEventsScreen() {
 
   const pickVenueImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.8,
+      mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.8, base64: Platform.OS === 'web'
     });
-    if (!result.canceled) setVenueImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      if (Platform.OS === 'web' && result.assets[0].base64) {
+        setVenueImageUri(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      } else {
+        setVenueImageUri(result.assets[0].uri);
+      }
+    }
   };
 
   const handleNextStep = () => {
@@ -153,7 +161,11 @@ export default function AdminEventsScreen() {
       setUploadingVenueImage(true);
       try {
         const formData = new FormData();
-        formData.append('file', { uri: venueImageUri, type: 'image/jpeg', name: 'venue_map.jpg' });
+        if (Platform.OS === 'web') {
+          formData.append('file', venueImageUri);
+        } else {
+          formData.append('file', { uri: venueImageUri, type: 'image/jpeg', name: 'venue_map.jpg' });
+        }
         formData.append('upload_preset', 'SportekEvent');
         const imgRes = await fetch('https://api.cloudinary.com/v1_1/dcqcebwg8/image/upload', {
           method: 'POST', body: formData,
@@ -239,16 +251,24 @@ export default function AdminEventsScreen() {
   };
 
   const handleDeleteVenue = (id) => {
-    Alert.alert('Delete Venue', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
-            await api.delete(`/venues/${id}`);
-            fetchVenues();
-          } catch (err) { Alert.alert('Error', 'Failed to delete venue'); }
-        }
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to delete this venue?')) {
+        api.delete(`/venues/${id}`)
+          .then(() => fetchVenues())
+          .catch((err) => Alert.alert('Error', 'Failed to delete venue'));
       }
-    ]);
+    } else {
+      Alert.alert('Delete Venue', 'Are you sure?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+            try {
+              await api.delete(`/venues/${id}`);
+              fetchVenues();
+            } catch (err) { Alert.alert('Error', 'Failed to delete venue'); }
+          }
+        }
+      ]);
+    }
   };
 
   // --- Event Handlers ---
@@ -388,7 +408,7 @@ export default function AdminEventsScreen() {
           <Ionicons name="arrow-back" size={20} color="#1d4ed8" />
           <Text style={styles.backBtnText}>Dashboard</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.createBtn} onPress={() => { setVenueStep(1); setVenueForm(initialVenueForm); setVenueImageUri(null); setShowVenueModal(true); }}>
+        <TouchableOpacity style={styles.createBtn} onPress={() => { setEditingVenueId(null); setVenueStep(1); setVenueForm(initialVenueForm); setVenueImageUri(null); setShowVenueModal(true); }}>
           <Ionicons name="add" size={20} color="#ffffff" />
           <Text style={styles.createBtnText}>Add Venue</Text>
         </TouchableOpacity>
@@ -406,6 +426,9 @@ export default function AdminEventsScreen() {
                 <Text style={styles.listItemSub}>{v.city} • {v.venueType} • {v.totalCapacity} seats</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+                <TouchableOpacity onPress={() => { setSelectedVenue(v); setShowViewVenueModal(true); }}>
+                  <Ionicons name="eye-outline" size={20} color="#059669" />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => openEditVenue(v)}>
                   <Ionicons name="pencil-outline" size={20} color="#1d4ed8" />
                 </TouchableOpacity>
@@ -606,11 +629,66 @@ export default function AdminEventsScreen() {
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity style={[styles.wizardBtnSolid, (savingVenue || uploadingVenueImage) && { opacity: 0.7 }]} onPress={handleSaveVenue} disabled={savingVenue || uploadingVenueImage}>
-                    {savingVenue || uploadingVenueImage ? <ActivityIndicator color="#fff" /> : <Text style={styles.wizardBtnSolidText}>Create Venue Profile</Text>}
+                    {savingVenue || uploadingVenueImage ? <ActivityIndicator color="#fff" /> : <Text style={styles.wizardBtnSolidText}>{editingVenueId ? 'Update Venue' : 'Create Venue Profile'}</Text>}
                   </TouchableOpacity>
                 )}
               </View>
               <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Venue View Modal */}
+      <Modal visible={showViewVenueModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Venue Details</Text>
+              <TouchableOpacity onPress={() => setShowViewVenueModal(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {selectedVenue && (
+                <View style={{ gap: 16 }}>
+                  <View>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#1e293b' }}>{selectedVenue.name}</Text>
+                    <Text style={{ fontSize: 14, color: '#64748b' }}>{selectedVenue.venueType} • {selectedVenue.totalCapacity} capacity</Text>
+                  </View>
+                  <View style={{ backgroundColor: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 4 }}>Location</Text>
+                    <Text style={{ fontSize: 14, color: '#334155' }}>{selectedVenue.address}</Text>
+                    <Text style={{ fontSize: 14, color: '#334155' }}>{selectedVenue.city}</Text>
+                    <Text style={{ fontSize: 13, color: '#0ea5e9', marginTop: 4, fontWeight: '500', textTransform: 'capitalize' }}>{selectedVenue.locationType} Venue</Text>
+                  </View>
+                  {selectedVenue.description ? (
+                    <View>
+                      <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 4 }}>Description</Text>
+                      <Text style={{ fontSize: 14, color: '#334155', lineHeight: 20 }}>{selectedVenue.description}</Text>
+                    </View>
+                  ) : null}
+                  {selectedVenue.seatLayoutImage ? (
+                    <View>
+                      <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 4 }}>Seat Layout Map</Text>
+                      <Image source={{ uri: selectedVenue.seatLayoutImage }} resizeMode="contain" style={{ width: '100%', height: 200, backgroundColor: '#f1f5f9', borderRadius: 8 }} />
+                    </View>
+                  ) : null}
+                  {selectedVenue.seatRows && selectedVenue.seatRows.length > 0 && (
+                    <View>
+                      <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 8 }}>Seat Rows ({selectedVenue.seatRows.length})</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {selectedVenue.seatRows.map((r, i) => (
+                          <View key={i} style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#334155' }}>Row {r.rowLabel}: {r.seatCount}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+              <View style={{ height: 20 }} />
             </ScrollView>
           </View>
         </View>
