@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -37,18 +37,24 @@ export default function ProfileScreen({ navigation }) {
     if (user?.role === 'customer') navigation.navigate('Home');
     else if (user?.role === 'propertyOwner') navigation.navigate('OwnerHome');
     else if (user?.role === 'securityOfficer') navigation.navigate('ScanQR');
-    else if (user?.role === 'admin') navigation.navigate('AdminHome');
+    else if (user?.role === 'admin' || user?.role === 'superAdmin') navigation.navigate('AdminHome');
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log Out', style: 'destructive', onPress: logout },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to log out?')) {
+        logout();
+      }
+    } else {
+      Alert.alert(
+        'Log Out',
+        'Are you sure you want to log out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log Out', style: 'destructive', onPress: logout },
+        ]
+      );
+    }
   };
 
   if (!user) return null;
@@ -81,7 +87,7 @@ export default function ProfileScreen({ navigation }) {
           <InfoRow icon="person-outline" label="Full Name" value={user.name} bgIndex={0} />
           <InfoRow icon="mail-outline" label="Email" value={user.email} bgIndex={1} />
           <InfoRow icon="shield-outline" label="Role" value={ROLE_LABELS[user.role] || user.role} bgIndex={2} />
-          {user.institution && (
+          {!!user.institution && (
             <InfoRow icon="school-outline" label="Institution" value={user.institution} bgIndex={3} />
           )}
         </View>

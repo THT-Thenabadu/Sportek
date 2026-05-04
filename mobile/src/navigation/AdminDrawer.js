@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../store/useAuthStore';
@@ -15,17 +15,25 @@ function CustomDrawerContent(props) {
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          props.navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-        }
+    const performLogout = async () => {
+      await logout();
+      // AppNavigator handles state change
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to logout?')) {
+        performLogout();
       }
-    ]);
+    } else {
+      Alert.alert('Logout', 'Are you sure you want to logout?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: performLogout
+        }
+      ]);
+    }
   };
 
   return (
