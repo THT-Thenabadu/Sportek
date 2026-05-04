@@ -6,11 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../lib/axios';
 
-import { useAuth } from '../../store/useAuthStore';
-
 export default function FacilityDetailScreen({ route, navigation }) {
   const { facility } = route?.params || {};
-  const { user } = useAuth();
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(true);
 
@@ -100,21 +97,16 @@ export default function FacilityDetailScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* Book Button or Restriction Box */}
-          {user?.role !== 'customer' ? (
-            <View style={styles.restrictionBox}>
-              <Ionicons name="information-circle-outline" size={24} color="#64748b" />
-              <Text style={styles.restrictionText}>Only customers can make bookings.</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.bookBtn}
-              onPress={() => navigation.navigate('BookingFlow', { facility })}
-            >
-              <Ionicons name="calendar" size={18} color="#ffffff" />
-              <Text style={styles.bookBtnText}>Book Now</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.bookBtn, availableSlots.length === 0 && styles.bookBtnDisabled]}
+            onPress={() => navigation.navigate('BookingFlow', { facility, slots })}
+            disabled={availableSlots.length === 0}
+          >
+            <Ionicons name="calendar" size={18} color="#ffffff" />
+            <Text style={styles.bookBtnText}>
+              {availableSlots.length > 0 ? 'Book Now' : 'No Slots Available'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -244,22 +236,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
-  },
-  restrictionBox: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  restrictionText: {
-    color: '#475569',
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
   },
 });

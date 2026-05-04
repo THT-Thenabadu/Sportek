@@ -170,7 +170,7 @@ router.get('/booking-window/:propertyId', protect, async (req, res) => {
 
 router.post('/create-onsite', protect, authorize('customer'), async (req, res) => {
   try {
-    const { propertyId, date, timeSlotStart, timeSlotEnd } = req.body;
+    const { propertyId, date, timeSlotStart, timeSlotEnd, paymentMethod } = req.body;
     const property = await Property.findById(propertyId);
     if (!property) return res.status(404).json({ message: 'Property not found' });
     // Remove any pending online booking for this slot by this customer
@@ -192,14 +192,19 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
     console.log('Existing booking found:', existing);
     if (existing) return res.status(400).json({ message: 'This slot is already taken' });
     const passkey = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    // Check if card or onsite
+    const dbMethod = paymentMethod === 'card' ? 'online' : 'onsite';
+    const status = paymentMethod === 'card' ? 'booked' : 'pending_onsite';
+
     const booking = await Booking.create({
       propertyId,
       customerId: req.user._id,
       date: new Date(date),
       timeSlot: { start: timeSlotStart, end: timeSlotEnd },
       totalAmount: property.pricePerHour,
-      status: 'pending_onsite',
-      paymentMethod: 'onsite',
+      status: status,
+      paymentMethod: dbMethod,
       passkey,
     });
     booking.qrCodeData = JSON.stringify({
@@ -209,7 +214,7 @@ router.post('/create-onsite', protect, authorize('customer'), async (req, res) =
       date,
       timeSlot: { start: timeSlotStart, end: timeSlotEnd },
       passkey,
-      paymentMethod: 'onsite',
+      paymentMethod: dbMethod,
       amountDue: property.pricePerHour
     });
     await booking.save();

@@ -22,6 +22,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
       "package": "com.tht_devl.SportekMobile"
@@ -56,6 +58,12 @@
       "eas": {
         "projectId": "3c6e593f-cf98-497b-8f90-23c31ed5ea32"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3c6e593f-cf98-497b-8f90-23c31ed5ea32"
     }
   }
 }

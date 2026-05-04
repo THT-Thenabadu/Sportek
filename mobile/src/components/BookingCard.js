@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 const STATUS_CONFIG = {
-  booked:         { color: '#16a34a', bg: '#dcfce7', label: 'Confirmed', icon: 'checkmark-circle' },
+  booked:         { color: '#16a34a', bg: '#dcfce7', label: 'Booked',    icon: 'checkmark-circle' },
   pending:        { color: '#d97706', bg: '#fef3c7', label: 'Pending',   icon: 'time' },
   pending_onsite: { color: '#7c3aed', bg: '#ede9fe', label: 'Pay On-Site', icon: 'cash' },
   active:         { color: '#0284c7', bg: '#e0f2fe', label: 'Active',    icon: 'play-circle' },

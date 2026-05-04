@@ -6,7 +6,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../lib/axios';
+// <<<<<<< mobile-featureBooking
+import { TextInput } from 'react-native';
+// =======
+// >>>>>>> ReactNative/Mobile
 import { useAuth } from '../../store/useAuthStore';
+import io from 'socket.io-client';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const pad = n => String(n).padStart(2, '0');
