@@ -26,6 +26,19 @@ router.post('/scan-qr', protect, authorize('securityOfficer'), scanQR);
 router.post('/checkin-token', protect, authorize('securityOfficer'), checkinByToken);
 router.patch('/:id/end-session', protect, authorize('securityOfficer'), endSession);
 
+// Admin — get all bookings
+router.get('/all', protect, authorize('admin', 'superAdmin'), async (req, res) => {
+  try {
+    const bookings = await Booking.find({})
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name')
+      .sort({ createdAt: -1 });
+    res.json(bookings);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Public endpoint to check slots
 router.route('/slots/:propertyId').get(getAvailableSlots);
 

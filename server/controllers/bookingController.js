@@ -24,9 +24,28 @@ const generateSlots = (startStr, endStr, durationMins) => {
   return slots;
 };
 
-// @desc    Get available time slots for a property on a given date (default today)
-// @route   GET /api/bookings/slots/:propertyId
-// @access  Public
+// ── Shared time-window validation helper ─────────────────────────────────────
+// Booking date is stored as UTC midnight in MongoDB.
+// Time slots (e.g. "14:00") are LOCAL time strings.
+// We reconstruct the local datetime by taking the LOCAL date parts from the
+// stored date and combining with the slot time strings.
+const buildSlotDateTimes = (bookingDate, startStr, endStr) => {
+  // bookingDate from MongoDB is UTC midnight — get local date parts
+  const d = new Date(bookingDate);
+  const year  = d.getFullYear();
+  const month = d.getMonth();
+  const day   = d.getDate();
+
+  const [startH, startM] = startStr.split(':').map(Number);
+  const [endH,   endM]   = endStr.split(':').map(Number);
+
+  const startDateTime = new Date(year, month, day, startH, startM, 0, 0);
+  const endDateTime   = new Date(year, month, day, endH,   endM,   0, 0);
+
+  return { startDateTime, endDateTime };
+};
+
+
 const getAvailableSlots = async (req, res) => {
   try {
     const propertyId = req.params.propertyId;
@@ -396,12 +415,30 @@ const getUpcomingSecurityBookings = async (req, res) => {
     const properties = await Property.find({ ownerId: req.user.associatedOwner });
     const propertyIds = properties.map(p => p._id);
 
-    // Only show bookings not yet scanned in
+    // Only show bookings from today onwards that haven't been scanned in
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Auto-expire past bookings that were never checked in
+    await Booking.updateMany(
+      {
+        propertyId: { $in: propertyIds },
+        status: { $in: ['booked', 'pending_onsite'] },
+        attendanceStatus: 'pending',
+        date: { $lt: todayStart },
+      },
+      { $set: { status: 'cancelled' } }
+    );
+
     const bookings = await Booking.find({
       propertyId: { $in: propertyIds },
       status: { $in: ['booked', 'pending_onsite'] },
-      attendanceStatus: 'pending'
-    }).populate('customerId', 'name email').populate('propertyId', 'name');
+      attendanceStatus: 'pending',
+      date: { $gte: todayStart },   // ← exclude past dates
+    })
+      .populate('customerId', 'name email')
+      .populate('propertyId', 'name')
+      .sort({ date: 1, 'timeSlot.start': 1 }); // earliest first
 
     res.json(bookings);
   } catch (error) {
@@ -476,48 +513,74 @@ const scanQR = async (req, res) => {
         .populate('propertyId', 'name ownerId');
     }
 
-    if (!booking) return res.status(404).json({ message: 'Invalid QR — booking not found' });
+    if (!booking) return res.status(404).json({
+      errorType: 'invalid',
+      message: 'Invalid QR — no booking found.',
+    });
 
-    // One-time use check
+    // 1. Wrong property — check booking's property owner matches security officer's associated owner
+    const securityOwner = req.user.associatedOwner?.toString();
+    const bookingPropertyOwner = booking.propertyId?.ownerId?.toString();
+
+    if (!securityOwner) {
+      return res.status(403).json({
+        errorType: 'wrong_property',
+        message: 'Your account is not linked to any property owner.',
+      });
+    }
+
+    if (securityOwner !== bookingPropertyOwner) {
+      return res.status(403).json({
+        errorType: 'wrong_property',
+        message: `This QR is for "${booking.propertyId?.name || 'another property'}" which is not under your management.`,
+      });
+    }
+
+    // 2. Already used
     if (booking.qrUsed) {
-      return res.status(400).json({ message: 'This QR code has already been used and is expired' });
+      return res.status(400).json({
+        errorType: 'already_used',
+        message: 'This QR has already been scanned — entry was already recorded.',
+        booking,
+      });
     }
 
-    // Belongs to this officer's property
-    const ownerId = req.user.associatedOwner?.toString();
-    const bookingOwnerId = booking.propertyId?.ownerId?.toString();
-    if (!ownerId || ownerId !== bookingOwnerId) {
-      return res.status(403).json({ message: 'This QR belongs to a different property' });
-    }
-
-    // Valid state
+    // 3. Wrong status
     if (!['booked', 'pending_onsite'].includes(booking.status)) {
-      return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
+      return res.status(400).json({
+        errorType: 'invalid_status',
+        message: `Booking cannot be checked in — current status is "${booking.status}".`,
+        booking,
+      });
     }
 
-    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
-    const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
+    // 4. Time window validation (allow 30 min early access)
     const now = new Date();
-
-    // Valid from 30 minutes before the booking start
+    const { startDateTime, endDateTime } = buildSlotDateTimes(
+      booking.date, booking.timeSlot.start, booking.timeSlot.end
+    );
     const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
 
     if (now < validFrom) {
       const diffMins = Math.ceil((validFrom - now) / 60000);
       return res.status(400).json({
-        message: `QR not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        errorType: 'too_early',
+        message: `Too early — entry opens at ${booking.timeSlot.start} (30 min before your slot). Come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
         validFrom: validFrom.toISOString(),
         bookingStart: startDateTime.toISOString(),
       });
     }
 
-    if (endDateTime < now) {
-      return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
+    // 5. Expired
+    if (now > endDateTime) {
+      return res.status(400).json({
+        errorType: 'expired',
+        message: `This booking has expired — the time slot (${booking.timeSlot.start}–${booking.timeSlot.end}) has already passed.`,
+        booking,
+      });
     }
 
-    // Check in
+    // ✅ Check in
     booking.status = 'active';
     booking.attendanceStatus = 'confirmed';
     booking.qrUsed = true;
@@ -541,44 +604,77 @@ const checkinByToken = async (req, res) => {
       .populate('customerId', 'name email')
       .populate('propertyId', 'name ownerId');
 
-    if (!booking) return res.status(404).json({ message: 'No booking found with this token' });
+    // 1. Not found
+    if (!booking) {
+      return res.status(404).json({
+        errorType: 'invalid',
+        message: 'Invalid token — no booking found with this code.',
+      });
+    }
 
+    // 2. Wrong property — check booking's property owner matches security officer's associated owner
+    const securityOwner = req.user.associatedOwner?.toString();
+    const bookingPropertyOwner = booking.propertyId?.ownerId?.toString();
+
+    if (!securityOwner) {
+      return res.status(403).json({
+        errorType: 'wrong_property',
+        message: 'Your account is not linked to any property owner.',
+      });
+    }
+
+    if (securityOwner !== bookingPropertyOwner) {
+      return res.status(403).json({
+        errorType: 'wrong_property',
+        message: `This booking is for "${booking.propertyId?.name || 'another property'}" which is not under your management.`,
+      });
+    }
+
+    // 3. Already used
     if (booking.qrUsed) {
-      return res.status(400).json({ message: 'This token has already been used — entry expired' });
+      return res.status(400).json({
+        errorType: 'already_used',
+        message: 'This token has already been used — entry was already recorded.',
+        booking,
+      });
     }
 
-    const ownerId = req.user.associatedOwner?.toString();
-    const bookingOwnerId = booking.propertyId?.ownerId?.toString();
-    if (!ownerId || ownerId !== bookingOwnerId) {
-      return res.status(403).json({ message: 'This booking belongs to a different property' });
-    }
-
+    // 4. Wrong status
     if (!['booked', 'pending_onsite'].includes(booking.status)) {
-      return res.status(400).json({ message: `Booking cannot be checked in (status: ${booking.status})` });
+      return res.status(400).json({
+        errorType: 'invalid_status',
+        message: `Booking cannot be checked in — current status is "${booking.status}".`,
+        booking,
+      });
     }
 
-    // Time window validation — assume time slots are in +05:30 (Sri Lanka/India) timezone
-    const datePart = booking.date.toISOString().split('T')[0];
-    const startDateTime = new Date(`${datePart}T${booking.timeSlot.start}:00+05:30`);
-    const endDateTime = new Date(`${datePart}T${booking.timeSlot.end}:00+05:30`);
+    // 5. Time window validation (allow 30 min early access)
     const now = new Date();
-
-    // Valid from 30 minutes before the booking start
+    const { startDateTime, endDateTime } = buildSlotDateTimes(
+      booking.date, booking.timeSlot.start, booking.timeSlot.end
+    );
     const validFrom = new Date(startDateTime.getTime() - 30 * 60 * 1000);
 
     if (now < validFrom) {
       const diffMins = Math.ceil((validFrom - now) / 60000);
       return res.status(400).json({
-        message: `Token not valid yet — entry opens 30 minutes before your booking. Please come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
+        errorType: 'too_early',
+        message: `Too early — entry opens at ${booking.timeSlot.start} (30 min before your slot). Come back in ${diffMins} minute${diffMins !== 1 ? 's' : ''}.`,
         validFrom: validFrom.toISOString(),
         bookingStart: startDateTime.toISOString(),
       });
     }
 
-    if (endDateTime < now) {
-      return res.status(400).json({ message: 'This booking has expired — the time slot has already passed' });
+    // 6. Expired — booking time has fully passed
+    if (now > endDateTime) {
+      return res.status(400).json({
+        errorType: 'expired',
+        message: `This booking has expired — the time slot (${booking.timeSlot.start}–${booking.timeSlot.end}) has already passed.`,
+        booking,
+      });
     }
 
+    // ✅ All validations passed — check in
     booking.status = 'active';
     booking.attendanceStatus = 'confirmed';
     booking.qrUsed = true;
@@ -604,7 +700,8 @@ const endSession = async (req, res) => {
       return res.status(400).json({ message: 'Booking is not currently active' });
     }
 
-    booking.status = 'ended';
+    booking.status = 'completed';
+    booking.attendanceStatus = 'confirmed';
     await booking.save();
 
     res.json({ success: true, booking });

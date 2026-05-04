@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -36,19 +36,33 @@ export default function ProfileScreen({ navigation }) {
   const goToDashboard = () => {
     if (user?.role === 'customer') navigation.navigate('Home');
     else if (user?.role === 'propertyOwner') navigation.navigate('OwnerHome');
-    else if (user?.role === 'securityOfficer') navigation.navigate('ScanQR');
-    else if (user?.role === 'admin') navigation.navigate('AdminHome');
+    else if (user?.role === 'securityOfficer') navigation.navigate('SecurityHome');
+    else if (user?.role === 'admin' || user?.role === 'superAdmin') navigation.navigate('Dashboard');
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log Out', style: 'destructive', onPress: logout },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      // Alert doesn't work well on web, use confirm instead
+      if (window.confirm('Are you sure you want to log out?')) {
+        logout();
+      }
+    } else {
+      Alert.alert(
+        'Log Out',
+        'Are you sure you want to log out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log Out',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+            },
+          },
+        ]
+      );
+    }
   };
 
   if (!user) return null;

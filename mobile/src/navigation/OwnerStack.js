@@ -9,6 +9,7 @@ import MyPropertiesScreen from '../screens/owner/MyPropertiesScreen';
 import AddPropertyScreen from '../screens/owner/AddPropertyScreen';
 import EditPropertyScreen from '../screens/owner/EditPropertyScreen';
 import AssetManagementScreen from '../screens/owner/AssetManagementScreen';
+import SecurityCredentialsScreen from '../screens/owner/SecurityCredentialsScreen';
 
 const Drawer = createDrawerNavigator();
 
@@ -72,6 +73,11 @@ export default function OwnerStack() {
         name="AssetManagement"
         component={AssetManagementScreen}
         options={{ title: 'Asset Management', drawerIcon: ({ color }) => <Ionicons name="construct-outline" size={22} color={color} /> }}
+      />
+      <Drawer.Screen
+        name="SecurityCredentials"
+        component={SecurityCredentialsScreen}
+        options={{ title: 'Security', drawerIcon: ({ color }) => <Ionicons name="shield-checkmark-outline" size={22} color={color} /> }}
       />
       {/* Unlisted Screens */}
       <Drawer.Screen

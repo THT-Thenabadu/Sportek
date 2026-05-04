@@ -23,6 +23,7 @@ const rescheduleRoutes = require('./routes/rescheduleRoutes');
 const venueRoutes = require('./routes/venueRoutes');
 const seatRoutes  = require('./routes/seatRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const entryLogRoutes = require('./routes/entryLogRoutes');
 
 connectDB();
 
@@ -30,11 +31,14 @@ const app = express();
 
 app.use(cors({
   origin: function(origin, callback) {
+    // Allow all localhost origins and no-origin requests (mobile apps, Postman)
+    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
     const allowedOrigins = [
-      'http://localhost:5173',
       process.env.CLIENT_URL
     ].filter(Boolean);
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -79,6 +83,7 @@ app.use('/api/warnings', warningRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/seats',  seatRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/entry-logs', entryLogRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ message: 'Sportek API is running' });

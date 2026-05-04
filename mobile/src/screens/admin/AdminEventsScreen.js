@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
-  TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Image
+  TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Image, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -21,7 +21,7 @@ export default function AdminEventsScreen() {
   const [editingId, setEditingId] = useState(null);
 
   const initialForm = {
-    name: '', description: '', date: '', time: '', location: '',
+    name: '', description: '', date: '', time: '', location: '', bookingDeadline: '',
     ticketTiers: [
       { tier: 'Gold', price: '', totalQuantity: '' },
       { tier: 'Silver', price: '', totalQuantity: '' },
@@ -103,14 +103,14 @@ export default function AdminEventsScreen() {
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.date || !form.location) {
-      Alert.alert('Error', 'Name, Date, and Location are required.');
+    if (!form.name || !form.date || !form.location || !form.time) {
+      Alert.alert('Error', 'Name, Date, Time, and Location are required.');
       return;
     }
     setSaving(true);
     let bannerImage = editingId ? imageUri : '';
 
-    if (imageUri && !imageUri.startsWith('http')) {
+    if (imageUri && !imageUri.startsWith('http') && Platform.OS !== 'web') {
       setUploadingImage(true);
       try {
         const formData = new FormData();
@@ -131,7 +131,32 @@ export default function AdminEventsScreen() {
     }
 
     try {
-      const payload = { ...form, bannerImage };
+      // Map ticketTiers → ticketCategories (model uses 'name' not 'tier')
+      const ticketCategories = form.ticketTiers
+        .filter(t => t.price && t.totalQuantity)
+        .map(t => ({
+          name: t.tier,
+          price: Number(t.price),
+          totalQuantity: Number(t.totalQuantity),
+        }));
+
+      // bookingDeadline defaults to event date if not set
+      const bookingDeadline = form.bookingDeadline || form.date;
+
+      const payload = {
+        name: form.name,
+        description: form.description,
+        date: form.date,
+        time: form.time,
+        location: form.location,
+        venueType: 'outdoor',   // default for mobile creation
+        bookingDeadline,
+        bannerImage,
+        ticketCategories,
+        ticketTiers: form.ticketTiers, // keep legacy field too
+        status: 'live',
+      };
+
       if (editingId) {
         await api.put(`/events/${editingId}`, payload);
       } else {
@@ -247,6 +272,10 @@ export default function AdminEventsScreen() {
                   <Text style={styles.label}>Time</Text>
                   <TextInput style={styles.input} value={form.time} onChangeText={v => setForm({ ...form, time: v })} placeholder="18:00" />
                 </View>
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Booking Deadline (YYYY-MM-DD)</Text>
+                <TextInput style={styles.input} value={form.bookingDeadline} onChangeText={v => setForm({ ...form, bookingDeadline: v })} placeholder="2025-08-14 (defaults to event date)" />
               </View>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Location / Venue *</Text>
